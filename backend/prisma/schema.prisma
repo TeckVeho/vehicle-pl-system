@@ -1,0 +1,122 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 権限設定（外部システム同期用）
+// 有効な role: CREW, 事務員, TL, 事業部, 人事労務, 総務広報, 経理財務, 品質管理, 営業, 現場MG, 本社MG, 部長, 執行役員, 取締役, DX, DX管理者
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String   // 権限（上記のいずれか）
+  externalId   String?  // 外部システム連携用
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([externalId])
+  @@index([role])
+}
+
+model Location {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  vehicles  Vehicle[]
+  courses   Course[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Course {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  name       String   // コース名
+  code       String   // 拠点内識別用（vehicleNoと対応）
+  sortOrder  Int      @default(0)
+  externalId String?  // 外部システム連携用
+  vehicles   Vehicle[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([locationId, code])
+  @@index([locationId])
+  @@index([externalId])
+}
+
+model Vehicle {
+  id           String         @id @default(cuid())
+  locationId   String
+  location     Location       @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  courseId     String?
+  course       Course?        @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  vehicleNo    String
+  serviceType  String?        // 便種別（例: ＣＶＳ）
+  externalId   String?        // 外部システム連携用
+  monthlyRecords MonthlyRecord[]
+  recordHistories MonthlyRecordHistory[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@unique([locationId, vehicleNo])
+  @@index([locationId])
+  @@index([courseId])
+  @@index([externalId])
+}
+
+model AccountItem {
+  id            String         @id @default(cuid())
+  code          String
+  name          String
+  category      String         // revenue | expense | subtotal_revenue | subtotal_expense | subtotal_gross | summary
+  sortOrder     Int
+  isSubtotal    Boolean        @default(false)
+  linkageMethod String?        // 連携方法（データ連携の見える化用）
+  effectiveFrom String?        // 適用開始年月 "YYYY-MM"
+  effectiveTo   String?        // 適用終了年月 "YYYY-MM"
+  monthlyRecords MonthlyRecord[]
+  recordHistories MonthlyRecordHistory[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@unique([code, name])
+  @@index([category])
+}
+
+model MonthlyRecord {
+  id            String      @id @default(cuid())
+  vehicleId     String
+  vehicle       Vehicle     @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  accountItemId String
+  accountItem   AccountItem @relation(fields: [accountItemId], references: [id], onDelete: Cascade)
+  yearMonth     String      // "2026-03"
+  amount        Float       @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([vehicleId, accountItemId, yearMonth])
+  @@index([yearMonth])
+  @@index([vehicleId])
+}
+
+model MonthlyRecordHistory {
+  id            String      @id @default(cuid())
+  vehicleId     String
+  vehicle       Vehicle     @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  accountItemId String
+  accountItem   AccountItem @relation(fields: [accountItemId], references: [id], onDelete: Cascade)
+  yearMonth     String
+  oldAmount     Float
+  newAmount     Float
+  createdAt     DateTime    @default(now())
+
+  @@index([yearMonth])
+  @@index([vehicleId])
+  @@index([accountItemId])
+}

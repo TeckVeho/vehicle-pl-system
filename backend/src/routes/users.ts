@@ -1,0 +1,304 @@
+import { Router, Request, Response } from "express";
+import bcrypt from "bcrypt";
+import { prisma } from "../lib/prisma.js";
+
+// 有効な権限一覧（外部システム同期用）
+export const VALID_ROLES = [
+  "CREW",
+  "事務員",
+  "TL",
+  "事業部",
+  "人事労務",
+  "総務広報",
+  "経理財務",
+  "品質管理",
+  "営業",
+  "現場MG",
+  "本社MG",
+  "部長",
+  "執行役員",
+  "取締役",
+  "DX",
+  "DX管理者",
+] as const;
+
+export const usersRouter = Router();
+
+// 一覧取得（外部同期用）
+usersRouter.get("/", async (_req: Request, res: Response) => {
+  try {
+    const users = await prisma.user.findMany({
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        externalId: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    res.json(users);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
+
+// 1件取得（externalId または id で検索）
+usersRouter.get("/:idOrExternalId", async (req: Request, res: Response) => {
+  try {
+    const { idOrExternalId } = req.params;
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [{ id: idOrExternalId }, { externalId: idOrExternalId }],
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        externalId: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    if (!user) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+    res.json(user);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to fetch user" });
+  }
+});
+
+// 作成・更新（外部同期用 upsert: externalId で検索し、あれば更新、なければ作成）
+usersRouter.post("/", async (req: Request, res: Response) => {
+  try {
+    const { email, name, role, externalId, password } = req.body;
+
+    if (!email || !name || !role) {
+      res.status(400).json({
+        error: "email, name, role are required",
+      });
+      return;
+    }
+
+    if (!VALID_ROLES.includes(role)) {
+      res.status(400).json({
+        error: `Invalid role. Valid roles: ${VALID_ROLES.join(", ")}`,
+      });
+      return;
+    }
+
+    const passwordHash = password
+      ? await bcrypt.hash(String(password), 10)
+      : await bcrypt.hash("changeme", 10);
+
+    const data = {
+      email: String(email).trim(),
+      name: String(name).trim(),
+      role: String(role),
+      externalId: externalId ? String(externalId).trim() : null,
+      passwordHash,
+    };
+
+    let user;
+    if (externalId) {
+      const existing = await prisma.user.findFirst({
+        where: { externalId: String(externalId) },
+      });
+      if (existing) {
+        user = await prisma.user.update({
+          where: { id: existing.id },
+          data: {
+            ...data,
+            passwordHash: password ? data.passwordHash : existing.passwordHash,
+          },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            externalId: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
+      } else {
+        user = await prisma.user.create({
+          data,
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            externalId: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
+      }
+    } else {
+      const existing = await prisma.user.findUnique({
+        where: { email: data.email },
+      });
+      if (existing) {
+        user = await prisma.user.update({
+          where: { id: existing.id },
+          data: {
+            name: data.name,
+            role: data.role,
+            externalId: data.externalId,
+            ...(password && { passwordHash: data.passwordHash }),
+          },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            externalId: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
+      } else {
+        user = await prisma.user.create({
+          data,
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            externalId: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
+      }
+    }
+
+    res.json(user);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to create/update user" });
+  }
+});
+
+// 一括同期（外部システム用）
+usersRouter.post("/sync", async (req: Request, res: Response) => {
+  try {
+    const { users } = req.body;
+    if (!Array.isArray(users)) {
+      res.status(400).json({ error: "users array is required" });
+      return;
+    }
+
+    const results: { email: string; status: "created" | "updated"; id: string }[] = [];
+
+    for (const u of users) {
+      const { email, name, role, externalId, password } = u;
+      if (!email || !name || !role) continue;
+      if (!VALID_ROLES.includes(role)) continue;
+
+      const passwordHash = password
+        ? await bcrypt.hash(String(password), 10)
+        : await bcrypt.hash("changeme", 10);
+
+      const data = {
+        email: String(email).trim(),
+        name: String(name).trim(),
+        role: String(role),
+        externalId: externalId ? String(externalId).trim() : null,
+        passwordHash,
+      };
+
+      const existing = externalId
+        ? await prisma.user.findFirst({ where: { externalId: String(externalId) } })
+        : await prisma.user.findUnique({ where: { email: data.email } });
+
+      if (existing) {
+        const updated = await prisma.user.update({
+          where: { id: existing.id },
+          data: {
+            name: data.name,
+            role: data.role,
+            externalId: data.externalId,
+            ...(password && { passwordHash: data.passwordHash }),
+          },
+        });
+        results.push({ email: data.email, status: "updated", id: updated.id });
+      } else {
+        const created = await prisma.user.create({ data });
+        results.push({ email: data.email, status: "created", id: created.id });
+      }
+    }
+
+    res.json({ synced: results.length, results });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to sync users" });
+  }
+});
+
+// 更新
+usersRouter.put("/:id", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { email, name, role, externalId, password } = req.body;
+
+    const updateData: Record<string, unknown> = {};
+    if (email !== undefined) updateData.email = String(email).trim();
+    if (name !== undefined) updateData.name = String(name).trim();
+    if (role !== undefined) {
+      if (!VALID_ROLES.includes(role)) {
+        res.status(400).json({
+          error: `Invalid role. Valid roles: ${VALID_ROLES.join(", ")}`,
+        });
+        return;
+      }
+      updateData.role = String(role);
+    }
+    if (externalId !== undefined) {
+      updateData.externalId = externalId ? String(externalId).trim() : null;
+    }
+    if (password !== undefined) {
+      updateData.passwordHash = await bcrypt.hash(String(password), 10);
+    }
+
+    const user = await prisma.user.update({
+      where: { id },
+      data: updateData,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        externalId: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    res.json(user);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to update user" });
+  }
+});
+
+// 削除
+usersRouter.delete("/:id", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    await prisma.user.delete({
+      where: { id },
+    });
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to delete user" });
+  }
+});

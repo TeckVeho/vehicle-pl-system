@@ -1,0 +1,90 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import {
+  LayoutDashboard,
+  FileSpreadsheet,
+  Download,
+  Calendar,
+  LogOut,
+  BookOpen,
+  MapPin,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { fetchApi } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { useAuthStore, canEditPL, canManageMaster } from "@/stores/authStore";
+
+const navItems = [
+  { href: "/dashboard", label: "ダッシュボード", icon: LayoutDashboard, roles: null },
+  { href: "/income-statement", label: "車両損益計算書", icon: FileSpreadsheet, roles: null },
+  { href: "/daily-summary", label: "日次連携データ", icon: Calendar, roles: null },
+  { href: "/import", label: "データインポート", icon: Download, roles: "EDIT_PL" as const },
+  { href: "/account-items", label: "勘定科目マスタ", icon: BookOpen, roles: "MASTER" as const },
+  { href: "/course-vehicle-mapping", label: "コース・車両マッピング", icon: MapPin, roles: null },
+];
+
+export function Header() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const user = useAuthStore((s) => s.user);
+
+  const handleLogout = async () => {
+    await fetchApi("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  };
+
+  const visibleNavItems = navItems.filter((item) => {
+    if (!item.roles) return true;
+    if (!user) return false;
+    if (item.roles === "EDIT_PL") return canEditPL(user.role);
+    if (item.roles === "MASTER") return canManageMaster(user.role);
+    return true;
+  });
+
+  return (
+    <header className="sticky top-0 z-50 w-full border-b border-white/20 bg-excel-header">
+      <div className="flex h-11 items-center justify-between gap-6 px-4">
+        <div className="flex items-center gap-6">
+          <Link href="/" className="flex items-center shrink-0">
+            <span className="text-sm font-semibold tracking-tight text-excel-header-foreground">
+              IZUMI
+            </span>
+          </Link>
+          <nav className="flex items-center gap-0.5">
+            {visibleNavItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = pathname.startsWith(item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "flex items-center gap-2 rounded-none px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap",
+                    isActive
+                      ? "bg-white/20 text-excel-header-foreground"
+                      : "text-excel-header-foreground/90 hover:bg-white/15 hover:text-excel-header-foreground"
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleLogout}
+          className="text-excel-header-foreground/90 hover:bg-white/15 hover:text-excel-header-foreground"
+        >
+          <LogOut className="h-4 w-4 mr-1" />
+          ログアウト
+        </Button>
+      </div>
+    </header>
+  );
+}
