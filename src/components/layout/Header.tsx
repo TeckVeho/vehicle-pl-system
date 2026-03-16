@@ -19,7 +19,7 @@ import { useAuthStore, canEditPL, canManageMaster } from "@/stores/authStore";
 const navItems = [
   { href: "/dashboard", label: "ダッシュボード", icon: LayoutDashboard, roles: null },
   { href: "/income-statement", label: "車両損益計算書", icon: FileSpreadsheet, roles: null },
-  { href: "/daily-summary", label: "日次連携データ", icon: Calendar, roles: null },
+  { href: "/daily-summary", label: "日次連携データ", icon: Calendar, roles: null, hidden: true },
   { href: "/import", label: "データインポート", icon: Download, roles: "EDIT_PL" as const },
   { href: "/account-items", label: "勘定科目マスタ", icon: BookOpen, roles: "MASTER" as const },
   { href: "/course-vehicle-mapping", label: "コース・車両マッピング", icon: MapPin, roles: null },
@@ -37,6 +37,7 @@ export function Header() {
   };
 
   const visibleNavItems = navItems.filter((item) => {
+    if ((item as { hidden?: boolean }).hidden) return false;
     if (!item.roles) return true;
     if (!user) return false;
     if (item.roles === "EDIT_PL") return canEditPL(user.role);

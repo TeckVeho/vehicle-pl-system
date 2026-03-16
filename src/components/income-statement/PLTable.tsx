@@ -13,7 +13,7 @@ import {
   EXPENSE_CATEGORY,
 } from "@/lib/calc";
 import { formatCurrency, formatPercent } from "@/lib/utils";
-import { EditableCell } from "./EditableCell";
+import { EditableCell, type ArrowDirection } from "./EditableCell";
 
 interface AccountItem {
   id: string;
@@ -61,9 +61,14 @@ interface PLTableProps {
     accountItemId: string,
     amount: number
   ) => Promise<void>;
+  onUpdateCourseRecord?: (
+    vehicleIds: string[],
+    accountItemId: string,
+    totalAmount: number
+  ) => Promise<void>;
 }
 
-export function PLTable({
+function PLTableInner({
   accountItems,
   vehicles,
   records,
@@ -71,6 +76,7 @@ export function PLTable({
   displayMode,
   editMode = false,
   onUpdateRecord,
+  onUpdateCourseRecord,
 }: PLTableProps) {
   const revenueItemIds = useMemo(
     () => new Set(accountItems.filter(isRevenueItem).map((a) => a.id)),
@@ -84,6 +90,12 @@ export function PLTable({
   const getAmount = (vehicleId: string, accountItemId: string) => {
     return records[`${vehicleId}-${accountItemId}`] ?? 0;
   };
+
+  /** 車両ID→車両のO(1)ルックアップ用Map */
+  const vehicleMap = useMemo(
+    () => new Map(vehicles.map((v) => [v.id, v])),
+    [vehicles]
+  );
 
   /** コースごとに車両をグループ化（コース未割当は「コースなし」に集約） */
   const courseGroups = useMemo((): CourseGroup[] => {
@@ -100,43 +112,85 @@ export function PLTable({
     return Array.from(courseMap.values());
   }, [vehicles]);
 
-  const getVehicleAmounts = (vehicleId: string) => {
-    const amountByItem = new Map<string, number>();
-    for (const item of accountItems) {
-      const amt = getAmount(vehicleId, item.id);
-      amountByItem.set(item.id, amt);
+  type ComputedAmounts = {
+    netRevenue: number;
+    totalExpense: number;
+    grossProfit: number;
+    amountByItem: Map<string, number>;
+  };
+
+  /** 車両・コース・合計列の計算を事前にメモ化（vehicles/accountItems/records変更時のみ再計算） */
+  const { vehicleAmountsMap, courseGroupAmountsMap, totalByItemMap } = useMemo(() => {
+    const vehicleMap = new Map<string, ComputedAmounts>();
+    for (const v of vehicles) {
+      const amountByItem = new Map<string, number>();
+      for (const item of accountItems) {
+        amountByItem.set(item.id, getAmount(v.id, item.id));
+      }
+      const netRevenue = calcNetRevenue(amountByItem, revenueItemIds);
+      const totalExpense = calcTotalExpense(amountByItem, expenseItemIds);
+      vehicleMap.set(v.id, {
+        netRevenue,
+        totalExpense,
+        grossProfit: netRevenue - totalExpense,
+        amountByItem,
+      });
     }
-    const netRevenue = calcNetRevenue(amountByItem, revenueItemIds);
-    const totalExpense = calcTotalExpense(amountByItem, expenseItemIds);
-    const grossProfit = netRevenue - totalExpense;
-    return { netRevenue, totalExpense, grossProfit, amountByItem };
-  };
 
-  /** コースグループの合計金額 */
-  const getCourseGroupAmount = (group: CourseGroup, accountItemId: string) => {
-    return group.vehicleIds.reduce(
-      (sum, vid) => sum + getAmount(vid, accountItemId),
-      0
-    );
-  };
-
-  /** コースグループの集計（amountByItem） */
-  const getCourseGroupAmounts = (group: CourseGroup) => {
-    const amountByItem = new Map<string, number>();
-    for (const item of accountItems) {
-      amountByItem.set(item.id, getCourseGroupAmount(group, item.id));
+    const courseMap = new Map<string, ComputedAmounts>();
+    for (const g of courseGroups) {
+      const amountByItem = new Map<string, number>();
+      for (const item of accountItems) {
+        const sum = g.vehicleIds.reduce(
+          (s, vid) => s + (records[`${vid}-${item.id}`] ?? 0),
+          0
+        );
+        amountByItem.set(item.id, sum);
+      }
+      const netRevenue = calcNetRevenue(amountByItem, revenueItemIds);
+      const totalExpense = calcTotalExpense(amountByItem, expenseItemIds);
+      courseMap.set(g.id, {
+        netRevenue,
+        totalExpense,
+        grossProfit: netRevenue - totalExpense,
+        amountByItem,
+      });
     }
-    const netRevenue = calcNetRevenue(amountByItem, revenueItemIds);
-    const totalExpense = calcTotalExpense(amountByItem, expenseItemIds);
-    const grossProfit = netRevenue - totalExpense;
-    return { netRevenue, totalExpense, grossProfit, amountByItem };
-  };
 
-  const getCellValue = (
+    const totalMap = new Map<string, { total: number; totalNetRevenue: number }>();
+    for (const item of accountItems) {
+      let total = 0;
+      let totalNetRevenue = 0;
+      if (displayMode === "course") {
+        for (const g of courseGroups) {
+          const computed = courseMap.get(g.id)!;
+          const val = getCourseCellValueFromComputed(g, item, computed);
+          total += val;
+          totalNetRevenue += computed.netRevenue;
+        }
+      } else {
+        for (const v of vehicles) {
+          const computed = vehicleMap.get(v.id)!;
+          const val = getCellValueFromComputed(v.id, item, computed);
+          total += val;
+          totalNetRevenue += computed.netRevenue;
+        }
+      }
+      totalMap.set(item.id, { total, totalNetRevenue });
+    }
+
+    return {
+      vehicleAmountsMap: vehicleMap,
+      courseGroupAmountsMap: courseMap,
+      totalByItemMap: totalMap,
+    };
+  }, [vehicles, accountItems, records, courseGroups, displayMode, revenueItemIds, expenseItemIds]);
+
+  function getCellValueFromComputed(
     vehicleId: string,
     item: AccountItem,
-    computed: { netRevenue: number; totalExpense: number; grossProfit: number }
-  ): number => {
+    computed: ComputedAmounts
+  ): number {
     if (item.category === "subtotal_revenue") return computed.netRevenue;
     if (item.category === "subtotal_expense") return computed.totalExpense;
     if (item.category === "subtotal_gross") return computed.grossProfit;
@@ -145,14 +199,14 @@ export function PLTable({
       if (item.code === "SUMMARY_EXP") return computed.totalExpense;
       if (item.code === "SUMMARY_GROSS") return computed.grossProfit;
     }
-    return getAmount(vehicleId, item.id);
-  };
+    return computed.amountByItem.get(item.id) ?? 0;
+  }
 
-  const getCourseCellValue = (
+  function getCourseCellValueFromComputed(
     group: CourseGroup,
     item: AccountItem,
-    computed: { netRevenue: number; totalExpense: number; grossProfit: number }
-  ): number => {
+    computed: ComputedAmounts
+  ): number {
     if (item.category === "subtotal_revenue") return computed.netRevenue;
     if (item.category === "subtotal_expense") return computed.totalExpense;
     if (item.category === "subtotal_gross") return computed.grossProfit;
@@ -161,16 +215,68 @@ export function PLTable({
       if (item.code === "SUMMARY_EXP") return computed.totalExpense;
       if (item.code === "SUMMARY_GROSS") return computed.grossProfit;
     }
-    return getCourseGroupAmount(group, item.id);
-  };
+    return computed.amountByItem.get(item.id) ?? 0;
+  }
 
   const isSubtotalRow = (item: AccountItem) => item.isSubtotal;
 
   const columns = displayMode === "course" ? courseGroups : vehicles;
-  const canEdit = displayMode === "vehicle" && editMode;
+  const canEdit = editMode;
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollRight, setCanScrollRight] = useState(false);
+  const cellFocusRefs = useRef<Map<string, () => void>>(new Map());
+
+  /** 矢印キーで次のセルへ移動 */
+  const getNextCellKey = (
+    rowIdx: number,
+    colIdx: number,
+    direction: ArrowDirection
+  ): string | null => {
+    const editableRowIndices = accountItems
+      .map((item, i) => (item.isSubtotal ? -1 : i))
+      .filter((i) => i >= 0);
+    const numCols = columns.length;
+
+    if (direction === "up") {
+      const idx = editableRowIndices.indexOf(rowIdx);
+      if (idx <= 0) return null;
+      return `${editableRowIndices[idx - 1]}-${colIdx}`;
+    }
+    if (direction === "down") {
+      const idx = editableRowIndices.indexOf(rowIdx);
+      if (idx < 0 || idx >= editableRowIndices.length - 1) return null;
+      return `${editableRowIndices[idx + 1]}-${colIdx}`;
+    }
+    if (direction === "left") {
+      if (colIdx <= 0) return null;
+      return `${rowIdx}-${colIdx - 1}`;
+    }
+    if (direction === "right") {
+      if (colIdx >= numCols - 1) return null;
+      return `${rowIdx}-${colIdx + 1}`;
+    }
+    return null;
+  };
+
+  const handleArrowKey = (
+    rowIdx: number,
+    colIdx: number,
+    direction: ArrowDirection
+  ) => {
+    const nextKey = getNextCellKey(rowIdx, colIdx, direction);
+    if (nextKey) {
+      cellFocusRefs.current.get(nextKey)?.();
+    }
+  };
+
+  const registerCellFocus = (key: string, fn: (() => void) | null) => {
+    if (fn) {
+      cellFocusRefs.current.set(key, fn);
+    } else {
+      cellFocusRefs.current.delete(key);
+    }
+  };
 
   const updateScrollState = () => {
     const el = scrollRef.current;
@@ -196,33 +302,54 @@ export function PLTable({
     scrollRef.current?.scrollBy({ left: 300, behavior: "smooth" });
   };
 
+  const tableWidth = Math.max(800, 352 + 180 * columns.length + 180);
+
   return (
     <div className="relative">
       <div
         ref={scrollRef}
         className="overflow-auto max-h-[calc(100dvh-13rem)]"
       >
-        <table className="w-full min-w-[800px] text-sm border-separate border-spacing-0 border border-excel-grid [&_th]:border-excel-grid [&_td]:border-excel-grid">
+        <table
+          className="text-sm border-separate border-spacing-0 border border-excel-grid [&_th]:border-excel-grid [&_td]:border-excel-grid"
+          style={{
+            width: tableWidth,
+            minWidth: tableWidth,
+            tableLayout: "fixed",
+          }}
+        >
+        <colgroup>
+          <col style={{ width: "72px" }} />
+          <col style={{ width: "80px" }} />
+          <col style={{ width: "200px" }} />
+          {columns.flatMap((c) => [
+            <col key={`${c.id}-m`} style={{ width: "90px" }} />,
+            <col key={`${c.id}-p`} style={{ width: "90px" }} />,
+          ])}
+          <col style={{ width: "180px" }} />
+        </colgroup>
         <thead>
           <tr className="border-b border-excel-grid bg-muted">
-            <th className="sticky left-0 top-0 z-30 bg-muted py-2 px-2 text-left text-xs font-medium text-foreground w-[72px] border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+            <th className="sticky left-0 top-0 z-40 bg-muted py-2 px-2 text-left text-xs font-medium text-foreground w-[72px] border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
               区分
             </th>
-            <th className="sticky left-[72px] top-0 z-30 bg-muted py-2 px-3 text-left text-xs font-medium text-foreground w-[80px] border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+            <th className="sticky left-[72px] top-0 z-40 bg-muted py-2 px-3 text-left text-xs font-medium text-foreground w-[80px] border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
               Code
             </th>
-            <th className="sticky left-[152px] top-0 z-30 bg-muted py-2 px-3 text-left text-xs font-medium text-foreground w-[200px] max-w-[200px] border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+            <th className="sticky left-[152px] top-0 z-40 bg-muted py-2 px-3 text-left text-xs font-medium text-foreground w-[200px] min-w-[200px] border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
               勘定科目
             </th>
             {displayMode === "course"
               ? courseGroups.map((g) => {
-                  const last4List = g.vehicleIds
+                  const vehicleLabels = g.vehicleIds
                     .map((vid) => {
-                      const v = vehicles.find((x) => x.id === vid);
+                      const v = vehicleMap.get(vid);
                       const digits = v?.vehicleNo.replace(/\D/g, "") ?? "";
-                      return (digits.slice(-4) || v?.vehicleNo) ?? "-";
+                      const last4 = digits.slice(-4) || v?.vehicleNo || "-";
+                      return v?.serviceType ? `${v.serviceType}（${last4}）` : `（${last4}）`;
                     })
                     .join(", ");
+                  const tooltipText = vehicleLabels || "車両番号の情報がありません";
                   return (
                     <th
                       key={g.id}
@@ -233,7 +360,7 @@ export function PLTable({
                         <span>{g.name}</span>
                         <span
                           className="text-muted-foreground font-normal text-[10px] cursor-help"
-                          title={last4List}
+                          title={tooltipText}
                         >
                           {g.vehicleIds.length}台
                         </span>
@@ -261,9 +388,9 @@ export function PLTable({
             </th>
           </tr>
           <tr className="border-b border-excel-grid bg-muted">
-            <th className="sticky left-0 top-[3.25rem] z-30 bg-muted py-1 px-2 border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]"></th>
-            <th className="sticky left-[72px] top-[3.25rem] z-30 bg-muted py-1 px-3 w-[80px] border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]"></th>
-            <th className="sticky left-[152px] top-[3.25rem] z-30 bg-muted py-1 px-3 border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]"></th>
+            <th className="sticky left-0 top-[3.25rem] z-40 bg-muted py-1 px-2 border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]"></th>
+            <th className="sticky left-[72px] top-[3.25rem] z-40 bg-muted py-1 px-3 w-[80px] border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]"></th>
+            <th className="sticky left-[152px] top-[3.25rem] z-40 bg-muted py-1 px-3 border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]"></th>
             {displayMode === "course"
               ? courseGroups.flatMap((g) => [
                   <th
@@ -299,7 +426,7 @@ export function PLTable({
           </tr>
         </thead>
         <tbody>
-          {accountItems.map((item) => {
+          {accountItems.map((item, rowIdx) => {
             const subtotal = isSubtotalRow(item);
             const stickyBg = subtotal ? "bg-muted" : "bg-background";
             return (
@@ -311,7 +438,7 @@ export function PLTable({
                     : "bg-background hover:bg-muted/50"
                 }`}
               >
-                <td className={`sticky left-0 z-20 py-2 px-2 text-sm overflow-hidden w-[72px] border-r border-excel-grid ${stickyBg} shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]`}>
+                <td className={`sticky left-0 z-30 py-2 px-2 text-sm overflow-hidden w-[72px] border-r border-excel-grid ${stickyBg} shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]`}>
                   <span
                     className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium whitespace-nowrap ${
                       item.category === REVENUE_CATEGORY
@@ -324,23 +451,47 @@ export function PLTable({
                     {getCategoryLabel(item.category)}
                   </span>
                 </td>
-                <td className={`sticky left-[72px] z-20 py-2 px-3 text-sm text-muted-foreground overflow-hidden w-[80px] border-r border-excel-grid ${stickyBg} shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]`}>
+                <td className={`sticky left-[72px] z-30 py-2 px-3 text-sm text-muted-foreground overflow-hidden w-[80px] border-r border-excel-grid ${stickyBg} shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]`}>
                   <span className="block truncate">{subtotal ? "-" : item.code}</span>
                 </td>
-                <td className={`sticky left-[152px] z-20 py-2 px-3 text-sm w-[200px] max-w-[200px] overflow-hidden border-r border-excel-grid ${stickyBg} shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)] ${subtotal ? "font-semibold" : "font-medium"}`}>
+                <td className={`sticky left-[152px] z-30 py-2 px-3 text-sm w-[200px] min-w-[200px] overflow-hidden border-r border-excel-grid ${stickyBg} shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)] ${subtotal ? "font-semibold" : "font-medium"}`}>
                   <span className="block truncate" title={item.name}>{item.name}</span>
                 </td>
                 {displayMode === "course"
-                  ? courseGroups.map((g) => {
-                      const computed = getCourseGroupAmounts(g);
-                      const value = getCourseCellValue(g, item, computed);
+                  ? courseGroups.map((g, colIdx) => {
+                      const computed = courseGroupAmountsMap.get(g.id)!;
+                      const value = getCourseCellValueFromComputed(g, item, computed);
                       const salesRatio = calcSalesRatio(value, computed.netRevenue);
+                      const isCourseEditable =
+                        canEdit &&
+                        !subtotal &&
+                        onUpdateCourseRecord &&
+                        g.vehicleIds.length > 0;
                       return (
                         <React.Fragment key={g.id}>
                           <td className={`py-0 px-0 w-[90px] border-r border-excel-grid ${subtotal ? "bg-muted" : "bg-background"}`}>
-                            <div className={`py-2 px-3 text-right ${subtotal ? "font-semibold" : "font-medium"}`}>
-                              {formatCurrency(value)}
-                            </div>
+                            {subtotal ? (
+                              <div className="py-2 px-3 text-right font-semibold">
+                                {formatCurrency(value)}
+                              </div>
+                            ) : isCourseEditable ? (
+                              <EditableCell
+                                value={value}
+                                editMode={canEdit}
+                                onSave={(amt) =>
+                                  onUpdateCourseRecord!(g.vehicleIds, item.id, amt)
+                                }
+                                cellKey={`${rowIdx}-${colIdx}`}
+                                onArrowKey={(dir) =>
+                                  handleArrowKey(rowIdx, colIdx, dir)
+                                }
+                                registerFocus={registerCellFocus}
+                              />
+                            ) : (
+                              <div className="py-2 px-3 text-right font-medium">
+                                {formatCurrency(value)}
+                              </div>
+                            )}
                           </td>
                           <td className={`py-2 px-3 text-right w-[90px] text-muted-foreground border-r border-excel-grid ${subtotal ? "bg-muted" : "bg-background"}`}>
                             {formatPercent(salesRatio)}
@@ -348,9 +499,9 @@ export function PLTable({
                         </React.Fragment>
                       );
                     })
-                  : vehicles.map((v) => {
-                      const computed = getVehicleAmounts(v.id);
-                      const value = getCellValue(v.id, item, computed);
+                  : vehicles.map((v, colIdx) => {
+                      const computed = vehicleAmountsMap.get(v.id)!;
+                      const value = getCellValueFromComputed(v.id, item, computed);
                       const salesRatio = calcSalesRatio(value, computed.netRevenue);
                       return (
                         <React.Fragment key={v.id}>
@@ -366,6 +517,11 @@ export function PLTable({
                                 onSave={(amt) =>
                                   onUpdateRecord(v.id, item.id, amt)
                                 }
+                                cellKey={`${rowIdx}-${colIdx}`}
+                                onArrowKey={(dir) =>
+                                  handleArrowKey(rowIdx, colIdx, dir)
+                                }
+                                registerFocus={registerCellFocus}
                               />
                             )}
                           </td>
@@ -377,23 +533,7 @@ export function PLTable({
                     })}
                 <td className={`py-2 px-3 text-right border-l border-excel-grid ${subtotal ? "bg-muted" : "bg-background"}`}>
                   {(() => {
-                    let total = 0;
-                    let totalNetRevenue = 0;
-                    if (displayMode === "course") {
-                      for (const g of courseGroups) {
-                        const computed = getCourseGroupAmounts(g);
-                        const val = getCourseCellValue(g, item, computed);
-                        total += val;
-                        totalNetRevenue += computed.netRevenue;
-                      }
-                    } else {
-                      for (const v of vehicles) {
-                        const computed = getVehicleAmounts(v.id);
-                        const val = getCellValue(v.id, item, computed);
-                        total += val;
-                        totalNetRevenue += computed.netRevenue;
-                      }
-                    }
+                    const { total, totalNetRevenue } = totalByItemMap.get(item.id)!;
                     const totalRatio = calcSalesRatio(total, totalNetRevenue);
                     return (
                       <>
@@ -429,3 +569,5 @@ export function PLTable({
     </div>
   );
 }
+
+export const PLTable = React.memo(PLTableInner);

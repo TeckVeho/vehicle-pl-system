@@ -6,41 +6,72 @@ import * as XLSX from "xlsx";
 
 export const incomeStatementRouter = Router();
 
-incomeStatementRouter.get("/", async (req: Request, res: Response) => {
+const METADATA_TTL = 5 * 60 * 1000; // 5 minutes
+let metadataCache: { data: { accountItems: unknown[]; locations: unknown[] }; expiry: number; yearMonth: string } | null = null;
+
+function invalidateMetadataCache() {
+  metadataCache = null;
+}
+
+incomeStatementRouter.get("/metadata", async (req: Request, res: Response) => {
   const yearMonth = req.query.yearMonth as string;
-  const locationId = req.query.locationId as string | undefined;
-  const skipStatic = req.query.skipStatic === "1";
 
   if (!yearMonth) {
     res.status(400).json({ error: "yearMonth is required" });
     return;
   }
 
-  const [vehicles, accountItems, locations] = await Promise.all([
-    prisma.vehicle.findMany({
-      where: locationId ? { locationId } : undefined,
-      select: {
-        id: true,
-        locationId: true,
-        vehicleNo: true,
-        serviceType: true,
-        createdAt: true,
-        updatedAt: true,
-        location: true,
-        course: { select: { id: true, name: true, code: true } },
-      },
-      orderBy: [{ locationId: "asc" }, { vehicleNo: "asc" }],
+  const now = Date.now();
+  if (metadataCache && metadataCache.yearMonth === yearMonth && metadataCache.expiry > now) {
+    res.json(metadataCache.data);
+    return;
+  }
+
+  const [accountItems, locations] = await Promise.all([
+    prisma.accountItem.findMany({
+      where: accountItemEffectiveWhere(yearMonth),
+      orderBy: { sortOrder: "asc" },
     }),
-    skipStatic
-      ? Promise.resolve(null)
-      : prisma.accountItem.findMany({
-          where: accountItemEffectiveWhere(yearMonth),
-          orderBy: { sortOrder: "asc" },
-        }),
-    skipStatic
-      ? Promise.resolve(null)
-      : prisma.location.findMany({ orderBy: { code: "asc" } }),
+    prisma.location.findMany({ orderBy: { code: "asc" } }),
   ]);
+
+  metadataCache = {
+    data: { accountItems, locations },
+    expiry: now + METADATA_TTL,
+    yearMonth,
+  };
+
+  res.json({ accountItems, locations });
+});
+
+incomeStatementRouter.get("/", async (req: Request, res: Response) => {
+  const yearMonth = req.query.yearMonth as string;
+  const locationId = req.query.locationId as string | undefined;
+
+  if (!yearMonth) {
+    res.status(400).json({ error: "yearMonth is required" });
+    return;
+  }
+
+  if (!locationId) {
+    res.status(400).json({ error: "locationId is required" });
+    return;
+  }
+
+  const vehicles = await prisma.vehicle.findMany({
+    where: { locationId },
+    select: {
+      id: true,
+      locationId: true,
+      vehicleNo: true,
+      serviceType: true,
+      createdAt: true,
+      updatedAt: true,
+      location: true,
+      course: { select: { id: true, name: true, code: true } },
+    },
+    orderBy: [{ locationId: "asc" }, { vehicleNo: "asc" }],
+  });
 
   const records = await prisma.monthlyRecord.findMany({
     where: {
@@ -60,8 +91,6 @@ incomeStatementRouter.get("/", async (req: Request, res: Response) => {
 
   res.json({
     vehicles,
-    accountItems,
-    locations,
     records: Object.fromEntries(recordMap),
     yearMonth,
     lastUpdatedAt: lastUpdatedAt ? lastUpdatedAt.toISOString() : null,
@@ -240,6 +269,71 @@ incomeStatementRouter.get("/history", async (req: Request, res: Response) => {
   );
 });
 
+incomeStatementRouter.post("/records/bulk", requireRole(ROLES.EDIT_PL), async (req: Request, res: Response) => {
+  const { yearMonth, records: recordsPayload } = req.body as {
+    yearMonth: string;
+    records: Array<{ vehicleId: string; accountItemId: string; amount: number }>;
+  };
+
+  if (!yearMonth || !Array.isArray(recordsPayload) || recordsPayload.length === 0) {
+    res.status(400).json({
+      error: "yearMonth and records array are required",
+    });
+    return;
+  }
+
+  await prisma.$transaction(async (tx) => {
+    for (const { vehicleId, accountItemId, amount } of recordsPayload) {
+      if (!vehicleId || !accountItemId) continue;
+
+      const existing = await tx.monthlyRecord.findUnique({
+        where: {
+          vehicleId_accountItemId_yearMonth: {
+            vehicleId,
+            accountItemId,
+            yearMonth,
+          },
+        },
+      });
+
+      const oldAmount = existing ? Number(existing.amount) : 0;
+      const newAmount = amount ?? 0;
+
+      await tx.monthlyRecord.upsert({
+        where: {
+          vehicleId_accountItemId_yearMonth: {
+            vehicleId,
+            accountItemId,
+            yearMonth,
+          },
+        },
+        update: { amount: newAmount },
+        create: {
+          vehicleId,
+          accountItemId,
+          yearMonth,
+          amount: newAmount,
+        },
+      });
+
+      if (oldAmount !== newAmount) {
+        await tx.monthlyRecordHistory.create({
+          data: {
+            vehicleId,
+            accountItemId,
+            yearMonth,
+            oldAmount,
+            newAmount,
+          },
+        });
+      }
+    }
+  });
+
+  invalidateMetadataCache();
+  res.json({ success: true });
+});
+
 incomeStatementRouter.post("/records", requireRole(ROLES.EDIT_PL), async (req: Request, res: Response) => {
   const { vehicleId, accountItemId, yearMonth, amount } = req.body;
 
@@ -292,5 +386,6 @@ incomeStatementRouter.post("/records", requireRole(ROLES.EDIT_PL), async (req: R
     });
   }
 
+  invalidateMetadataCache();
   res.json(record);
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect, useMemo, useRef } from "react";
+import { Suspense, useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { FilterBar } from "@/components/income-statement/FilterBar";
 import { LoadingOverlay } from "@/components/income-statement/LoadingOverlay";
@@ -16,36 +16,64 @@ import { fetchApi, getApiUrl } from "@/lib/api";
 import { useAuthStore, canEditPL } from "@/stores/authStore";
 
 const CACHE_KEY_PREFIX = "income-statement";
+const METADATA_CACHE_KEY_PREFIX = "income-statement:metadata";
 
-function getCacheKey(yearMonth: string, locationId: string) {
+function getLocationCacheKey(yearMonth: string, locationId: string) {
   return `${CACHE_KEY_PREFIX}:${yearMonth}:${locationId}`;
 }
 
-function readCache(yearMonth: string, locationId: string) {
+function getMetadataCacheKey(yearMonth: string) {
+  return `${METADATA_CACHE_KEY_PREFIX}:${yearMonth}`;
+}
+
+function readLocationCache(yearMonth: string, locationId: string) {
   if (typeof window === "undefined") return null;
   try {
-    const raw = sessionStorage.getItem(getCacheKey(yearMonth, locationId));
+    const raw = sessionStorage.getItem(getLocationCacheKey(yearMonth, locationId));
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
 
-function writeCache(
+function writeLocationCache(
   yearMonth: string,
   locationId: string,
   data: {
     vehicles: unknown[];
     records: Record<string, number>;
     lastUpdatedAt: string | null;
-    accountItems?: unknown[];
-    locations?: unknown[];
   }
 ) {
   if (typeof window === "undefined") return;
   try {
     sessionStorage.setItem(
-      getCacheKey(yearMonth, locationId),
+      getLocationCacheKey(yearMonth, locationId),
+      JSON.stringify(data)
+    );
+  } catch {
+    // sessionStorage full or unavailable
+  }
+}
+
+function readMetadataCache(yearMonth: string) {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(getMetadataCacheKey(yearMonth));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeMetadataCache(
+  yearMonth: string,
+  data: { accountItems: unknown[]; locations: unknown[] }
+) {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(
+      getMetadataCacheKey(yearMonth),
       JSON.stringify(data)
     );
   } catch {
@@ -91,23 +119,22 @@ function IncomeStatementContent() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   });
-  const [locationId, setLocationId] = useState(() => {
-    return searchParams.get("locationId") ?? "all";
+  const [locationId, setLocationId] = useState<string | null>(() => {
+    return searchParams.get("locationId");
   });
   const [searchQuery, setSearchQuery] = useState("");
   const [displayMode, setDisplayMode] = useState<DisplayMode>("course");
-  const [loading, setLoading] = useState(true);
+  const [metadataLoading, setMetadataLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
+  const loading = metadataLoading || dataLoading;
+
   const handleDisplayModeChange = (mode: DisplayMode) => {
     setDisplayMode(mode);
-    if (mode === "course" && editMode) setEditMode(false);
   };
-
-  // 勘定科目・拠点は変化しないためキャッシュし、タブ切替時の再取得を省く
-  const staticDataLoaded = useRef(false);
 
   const filteredAccountItems = useMemo(() => {
     if (!searchQuery.trim()) return accountItems;
@@ -121,37 +148,54 @@ function IncomeStatementContent() {
     });
   }, [accountItems, searchQuery]);
 
-  const fetchData = async (isRevalidate = false) => {
-    if (!isRevalidate) setLoading(true);
-    try {
-      const params = new URLSearchParams({ yearMonth });
-      if (locationId !== "all") params.set("locationId", locationId);
-      if (staticDataLoaded.current) params.set("skipStatic", "1");
-
-      const res = await fetchApi(`/api/income-statement?${params}`);
-      const data = await res.json();
-
-      setVehicles(data.vehicles);
-      setRecords(data.records || {});
-      setLastUpdatedAt(data.lastUpdatedAt ?? null);
-
-      if (!staticDataLoaded.current) {
-        setAccountItems(data.accountItems ?? []);
-        setLocations(data.locations ?? []);
-        staticDataLoaded.current = true;
-      }
-
-      writeCache(yearMonth, locationId, {
-        vehicles: data.vehicles,
-        records: data.records || {},
-        lastUpdatedAt: data.lastUpdatedAt ?? null,
-        accountItems: data.accountItems,
-        locations: data.locations,
-      });
-    } finally {
-      setLoading(false);
+  const fetchMetadata = useCallback(async (ym: string) => {
+    const cached = readMetadataCache(ym);
+    if (cached?.locations?.length && cached?.accountItems?.length) {
+      setLocations(cached.locations);
+      setAccountItems(cached.accountItems);
     }
-  };
+
+    const res = await fetchApi(`/api/income-statement/metadata?yearMonth=${ym}`);
+    const data = await res.json();
+    setLocations(data.locations ?? []);
+    setAccountItems(data.accountItems ?? []);
+    writeMetadataCache(ym, {
+      accountItems: data.accountItems ?? [],
+      locations: data.locations ?? [],
+    });
+  }, []);
+
+  const fetchLocationData = useCallback(
+    async (
+      ym: string,
+      locId: string,
+      isRevalidate = false
+    ): Promise<{ vehicles: Vehicle[]; records: Record<string, number>; lastUpdatedAt: string | null }> => {
+      if (!isRevalidate) setDataLoading(true);
+      try {
+        const params = new URLSearchParams({ yearMonth: ym, locationId: locId });
+        const res = await fetchApi(`/api/income-statement?${params}`);
+        const data = await res.json();
+
+        const result = {
+          vehicles: data.vehicles ?? [],
+          records: data.records || {},
+          lastUpdatedAt: data.lastUpdatedAt ?? null,
+        };
+
+        writeLocationCache(ym, locId, {
+          vehicles: result.vehicles,
+          records: result.records,
+          lastUpdatedAt: result.lastUpdatedAt,
+        });
+
+        return result;
+      } finally {
+        if (!isRevalidate) setDataLoading(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     const ym = searchParams.get("yearMonth");
@@ -160,39 +204,74 @@ function IncomeStatementContent() {
     if (loc) setLocationId(loc);
   }, [searchParams]);
 
-  // 全拠点タブ削除に伴い、allの場合は最初の拠点にフォールバック
   useEffect(() => {
-    if (locations.length > 0 && locationId === "all") {
-      setLocationId(locations[0].id);
+    let cancelled = false;
+
+    async function init() {
+      setMetadataLoading(true);
+      await fetchMetadata(yearMonth);
+      if (cancelled) return;
+      setMetadataLoading(false);
     }
-  }, [locations, locationId]);
+
+    init();
+    return () => {
+      cancelled = true;
+    };
+  }, [yearMonth, fetchMetadata]);
 
   useEffect(() => {
-    const cached = readCache(yearMonth, locationId);
+    if (metadataLoading || locations.length === 0) return;
+
+    setLocationId((prev) => {
+      const urlLocId = searchParams.get("locationId");
+      const validUrlLocId =
+        urlLocId && locations.some((l) => l.id === urlLocId)
+          ? urlLocId
+          : null;
+      const resolvedLocationId = validUrlLocId ?? locations[0].id;
+      if (prev === null || !locations.some((l) => l.id === prev)) {
+        return resolvedLocationId;
+      }
+      return prev;
+    });
+  }, [metadataLoading, locations, searchParams]);
+
+  useEffect(() => {
+    if (!locationId) return;
+
+    let cancelled = false;
+
+    const cached = readLocationCache(yearMonth, locationId);
     if (cached?.vehicles?.length) {
       setVehicles(cached.vehicles);
       setRecords(cached.records || {});
       setLastUpdatedAt(cached.lastUpdatedAt ?? null);
-      if (cached.accountItems?.length && !staticDataLoaded.current) {
-        setAccountItems(cached.accountItems);
-        staticDataLoaded.current = true;
-      }
-      if (cached.locations?.length) {
-        setLocations(cached.locations);
-      }
-      setLoading(false);
-      fetchData(true);
+      setDataLoading(false);
     } else {
-      fetchData(false);
+      setDataLoading(true);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [yearMonth, locationId]);
+
+    const isRevalidate = !!cached?.vehicles?.length;
+    fetchLocationData(yearMonth, locationId, isRevalidate).then((result) => {
+      if (cancelled) return;
+      setVehicles(result.vehicles);
+      setRecords(result.records);
+      setLastUpdatedAt(result.lastUpdatedAt);
+      setDataLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [yearMonth, locationId, fetchLocationData]);
 
   const handleUpdateRecord = async (
     vehicleId: string,
     accountItemId: string,
     amount: number
   ) => {
+    if (!locationId) return;
     await fetchApi("/api/income-statement/records", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -203,21 +282,66 @@ function IncomeStatementContent() {
       [`${vehicleId}-${accountItemId}`]: amount,
     };
     setRecords(nextRecords);
-    writeCache(yearMonth, locationId, {
+    writeLocationCache(yearMonth, locationId, {
       vehicles,
       records: nextRecords,
       lastUpdatedAt: new Date().toISOString(),
-      accountItems,
-      locations,
+    });
+  };
+
+  /** コース単位の編集：合計を車両数で均等配分して各車両を更新（bulk APIで1リクエスト） */
+  const handleUpdateCourseRecord = async (
+    vehicleIds: string[],
+    accountItemId: string,
+    totalAmount: number
+  ) => {
+    if (!locationId) return;
+    const n = vehicleIds.length;
+    if (n === 0) return;
+    const perVehicle = Math.floor(totalAmount / n);
+    const remainder = totalAmount - perVehicle * n;
+
+    const recordsPayload = vehicleIds.map((vehicleId, i) => ({
+      vehicleId,
+      accountItemId,
+      amount: perVehicle + (i === n - 1 ? remainder : 0),
+    }));
+
+    await fetchApi("/api/income-statement/records/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ yearMonth, records: recordsPayload }),
+    });
+
+    const nextRecords = { ...records };
+    for (let i = 0; i < n; i++) {
+      const amt = perVehicle + (i === n - 1 ? remainder : 0);
+      nextRecords[`${vehicleIds[i]}-${accountItemId}`] = amt;
+    }
+    setRecords(nextRecords);
+    writeLocationCache(yearMonth, locationId, {
+      vehicles,
+      records: nextRecords,
+      lastUpdatedAt: new Date().toISOString(),
     });
   };
 
   const handleExport = () => {
-    const params = new URLSearchParams({ yearMonth });
-    if (locationId !== "all") params.set("locationId", locationId);
+    if (!locationId) return;
+    const params = new URLSearchParams({ yearMonth, locationId });
     const base = getApiUrl();
     window.open(`${base}/api/income-statement/export?${params}`, "_blank");
   };
+
+  const refetchLocationData = useCallback(() => {
+    if (locationId) {
+      fetchLocationData(yearMonth, locationId, false).then((result) => {
+        setVehicles(result.vehicles);
+        setRecords(result.records);
+        setLastUpdatedAt(result.lastUpdatedAt);
+      });
+    }
+  }, [locationId, yearMonth, fetchLocationData]);
 
   return (
     <div className="pb-12 relative">
@@ -251,13 +375,10 @@ function IncomeStatementContent() {
                 variant={editMode ? "default" : "ghost"}
                 size="sm"
                 onClick={() => setEditMode((v) => !v)}
-                disabled={displayMode === "course"}
                 title={
-                  displayMode === "course"
-                    ? "編集は車両表示でのみ可能です"
-                    : editMode
-                      ? "編集モードをオフにする"
-                      : "編集モードをオンにする"
+                  editMode
+                    ? "編集モードをオフにする"
+                    : "編集モードをオンにする"
                 }
               >
                 {editMode ? (
@@ -276,8 +397,8 @@ function IncomeStatementContent() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setImportOpen(true)}
-                disabled={locationId === "all"}
-                title={locationId === "all" ? "拠点を選択してからインポートしてください" : "Excelインポート"}
+                disabled={!locationId}
+                title={!locationId ? "拠点を読み込み中です" : "Excelインポート"}
               >
                 <Upload className="h-4 w-4 mr-1.5" />
                 インポート
@@ -326,11 +447,12 @@ function IncomeStatementContent() {
           displayMode={displayMode}
           editMode={canEdit && editMode}
           onUpdateRecord={handleUpdateRecord}
+          onUpdateCourseRecord={handleUpdateCourseRecord}
         />
       )}
 
       <LocationTabBar
-        locationId={locationId}
+        locationId={locationId ?? ""}
         locations={locations}
         onLocationChange={setLocationId}
       />
@@ -338,9 +460,9 @@ function IncomeStatementContent() {
       <ImportDialog
         open={importOpen}
         yearMonth={yearMonth}
-        locationId={locationId}
+        locationId={locationId ?? ""}
         onClose={() => setImportOpen(false)}
-        onSuccess={fetchData}
+        onSuccess={refetchLocationData}
       />
 
       <HistoryDialog

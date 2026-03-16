@@ -4,12 +4,20 @@ import { useState, useRef, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
 
+export type ArrowDirection = "up" | "down" | "left" | "right";
+
 interface EditableCellProps {
   value: number;
   onSave: (value: number) => Promise<void>;
   editMode?: boolean;
   disabled?: boolean;
   className?: string;
+  /** 矢印キー押下時に呼ばれる。ナビゲーション先のセルへ移動するために使用 */
+  onArrowKey?: (direction: ArrowDirection) => void;
+  /** 親がこのセルをフォーカスするために登録するコールバック。(key, fn) で登録、(key, null) で解除 */
+  registerFocus?: (key: string, fn: (() => void) | null) => void;
+  /** registerFocus で使うセル識別キー（例: "row-col"） */
+  cellKey?: string;
 }
 
 export function EditableCell({
@@ -18,6 +26,9 @@ export function EditableCell({
   editMode = false,
   disabled = false,
   className = "",
+  onArrowKey,
+  registerFocus,
+  cellKey = "",
 }: EditableCellProps) {
   const [editing, setEditing] = useState(false);
   const [inputValue, setInputValue] = useState(String(value));
@@ -42,6 +53,13 @@ export function EditableCell({
     if (disabled) return;
     setEditing(true);
   };
+
+  useEffect(() => {
+    if (registerFocus && cellKey) {
+      registerFocus(cellKey, startEditing);
+      return () => registerFocus(cellKey, null);
+    }
+  }, [registerFocus, cellKey]);
 
   const handleBlur = async () => {
     setEditing(false);
@@ -68,6 +86,20 @@ export function EditableCell({
     }
     if (e.key === "Tab") {
       (e.target as HTMLInputElement).blur();
+    }
+    // 矢印キーでセル間移動（Excel風）
+    const arrowMap: Record<string, ArrowDirection> = {
+      ArrowUp: "up",
+      ArrowDown: "down",
+      ArrowLeft: "left",
+      ArrowRight: "right",
+    };
+    const dir = arrowMap[e.key];
+    if (dir && onArrowKey) {
+      e.preventDefault();
+      handleBlur();
+      // blur 完了後に次のセルへフォーカス（次のティックで実行）
+      setTimeout(() => onArrowKey(dir), 0);
     }
   };
 
