@@ -120,3 +120,17 @@ model MonthlyRecordHistory {
   @@index([vehicleId])
   @@index([accountItemId])
 }
+
+// 外部システムからのデータ連携記録（成功データのみ）
+model DataSyncLog {
+  id          String   @id @default(cuid())
+  source      String   // 外部システム名（例: "手動インポート", "日次売上連携"）
+  syncType    String   // 連携種別（例: "monthly_records", "daily_revenue"）
+  recordCount Int      @default(0) // 連携件数
+  yearMonth   String?  // 対象年月 "YYYY-MM"
+  locationId  String?  // 対象拠点ID
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([source])
+}

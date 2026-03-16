@@ -171,6 +171,23 @@ importRouter.post(
       }
     }
 
+    // 成功時は連携記録を登録（1件以上成功した場合）
+    if (successCount > 0) {
+      try {
+        await prisma.dataSyncLog.create({
+          data: {
+            source: "手動インポート",
+            syncType: "monthly_records",
+            recordCount: successCount,
+            yearMonth,
+            locationId: locationId || null,
+          },
+        });
+      } catch (logErr) {
+        console.error("Failed to create sync log:", logErr);
+      }
+    }
+
     res.json({ success: successCount, errors });
   }
 );

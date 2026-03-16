@@ -176,6 +176,25 @@ async function main() {
     }
   }
 
+  // サンプル連携記録（デモ用）
+  const locsForSync = await prisma.location.findMany({ take: 3 });
+  const baseDate = new Date();
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(baseDate);
+    d.setDate(d.getDate() - i * 2);
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const loc = locsForSync[i % locsForSync.length];
+    await prisma.dataSyncLog.create({
+      data: {
+        source: i % 2 === 0 ? "手動インポート" : "日次売上連携",
+        syncType: i % 2 === 0 ? "monthly_records" : "daily_revenue",
+        recordCount: 50 + i * 10,
+        yearMonth: ym,
+        locationId: loc?.id ?? null,
+      },
+    }).catch(() => {});
+  }
+
   console.log("Seed completed.");
 }
 
