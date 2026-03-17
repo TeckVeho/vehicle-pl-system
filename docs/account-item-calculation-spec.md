@@ -31,10 +31,10 @@
 | 5010 | 菱倉運輸 | 手動入力 | MonthlyRecord | 同上 |
 | 5010 | ロジスティクス・ネットワーク | 手動入力 | MonthlyRecord | 同上 |
 | 5010 | ダイセーロジスティクス | 手動入力 | MonthlyRecord | 同上 |
-| 5010 | 関東運輸 | 手動入力 | MonthlyRecord | 同上 |
-| 5010 | その他 | 手動入力 | MonthlyRecord | 同上 |
-| 5010 | 不動産収入 | 手動入力 | MonthlyRecord | 同上 |
-| 5010 | 人材派遣収入 | 手動入力 | MonthlyRecord | 同上 |
+| 5010 | 関東運輸 | 手動入力 | MonthlyRecord | CSVインポート / API一括 / 画面編集 |
+| 5010 | その他 | 手入力のみ | MonthlyRecord | 画面編集のみ（CSV/API一括不可） |
+| 5010 | 不動産収入 | 手入力のみ | MonthlyRecord | 同上 |
+| 5010 | 人材派遣収入 | 手入力のみ | MonthlyRecord | 同上 |
 | SUBTOTAL_REV | 純売上高 | 集計 | 計算 | 売上科目の合計 |
 
 **日次サマリーでの按分**: 売上科目は DailyOperatingRecord（日次稼働・走行）があれば、勘定科目の `revenuePricingType` に応じて日次按分されます。
@@ -136,7 +136,8 @@
 
 | 取得方法 | 対象科目 | 連携API / 入力手段 | 優先度・備考 |
 |----------|----------|-------------------|--------------|
-| **手動入力** | 売上科目（14種）、その他経費（27種） | POST /api/import（CSV/Excel）、POST /api/income-statement/records/bulk、画面編集 | 経理データをイズミクラウド等から取得し登録 |
+| **手動入力** | 売上科目（11種）、その他経費（27種） | POST /api/import（CSV/Excel）、POST /api/income-statement/records/bulk、画面編集 | 経理データをイズミクラウド等から取得し登録 |
+| **手入力のみ** | その他、不動産収入、人材派遣収入 | 画面編集のみ | CSV/API一括登録は不可。損益計算書画面から直接入力 |
 | **イズミクラウド連携** | リース車償却、車両償却費、車両リース、損害保険料、賦課税 | POST /api/vehicle-monthly-costs/sync | 表示時は VehicleMonthlyCost を優先 |
 | **ドライバー配賦** | 乗務員給料、業務給料、通勤手当、法定福利費、福利厚生費 | POST /api/driver-monthly-amounts/sync、POST /api/driver-assignments/sync | 連携後に自動で車両別に按分 |
 | **集計** | 純売上高、自車原価計、自車粗利益、売上計、原価計、粗利益 | システム内計算 | 他科目から自動算出 |

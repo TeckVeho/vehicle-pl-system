@@ -373,6 +373,7 @@ JWT は `POST /api/auth/login` で取得。有効期限は 7 日間。
 - 2行目以降: 車両番号（vehicleNo）、勘定科目名または科目コード、金額
 - 勘定科目は `AccountItem.name` または `AccountItem.code` で照合
 - 車両は `Vehicle.vehicleNo` で照合
+- **手入力専用科目**（その他、不動産収入、人材派遣収入）はインポート不可。損益計算書画面から直接入力
 
 **Excel 形式**: 同様に A列=車両番号、B列=勘定科目、C列=金額
 
@@ -411,6 +412,7 @@ JWT は `POST /api/auth/login` で取得。有効期限は 7 日間。
 
 - `vehicleId`, `accountItemId` は内部 ID を指定（GET /api/vehicles, GET /api/account-items で取得）
 - 変更履歴（MonthlyRecordHistory）が自動記録される
+- **手入力専用科目**（その他、不動産収入、人材派遣収入）は一括登録不可。該当レコードはスキップされる
 
 ---
 

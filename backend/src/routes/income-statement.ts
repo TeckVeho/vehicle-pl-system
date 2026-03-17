@@ -5,6 +5,9 @@ import { requireRole, ROLES } from "../lib/auth.js";
 import { isVehicleCostAccount, getVehicleCostAmount } from "../lib/vehicle-costs.js";
 import * as XLSX from "xlsx";
 
+/** 手入力専用（CSV/API一括登録不可）の勘定科目名 */
+const MANUAL_INPUT_ONLY_NAMES = ["その他", "不動産収入", "人材派遣収入"];
+
 export const incomeStatementRouter = Router();
 
 const METADATA_TTL = 5 * 60 * 1000; // 5 minutes
@@ -353,9 +356,19 @@ incomeStatementRouter.post("/records/bulk", requireRole(ROLES.EDIT_PL), async (r
     return;
   }
 
+  const accountItemIds = [...new Set(recordsPayload.map((r) => r.accountItemId).filter(Boolean))];
+  const accountItems = await prisma.accountItem.findMany({
+    where: { id: { in: accountItemIds } },
+    select: { id: true, name: true },
+  });
+  const manualOnlyIds = new Set(
+    accountItems.filter((a) => MANUAL_INPUT_ONLY_NAMES.includes(a.name)).map((a) => a.id)
+  );
+
   await prisma.$transaction(async (tx) => {
     for (const { vehicleId, accountItemId, amount } of recordsPayload) {
       if (!vehicleId || !accountItemId) continue;
+      if (manualOnlyIds.has(accountItemId)) continue;
 
       const existing = await tx.monthlyRecord.findUnique({
         where: {

@@ -4,6 +4,9 @@ import * as XLSX from "xlsx";
 import { prisma } from "../lib/prisma.js";
 import { accountItemEffectiveWhere } from "../lib/account-item-filter.js";
 
+/** 手入力専用（CSV/Excelインポート不可）の勘定科目名 */
+const MANUAL_INPUT_ONLY_NAMES = ["その他", "不動産収入", "人材派遣収入"];
+
 type DataRow = { vehicleNo: string; accountKey: string; amount: number };
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -120,6 +123,11 @@ importRouter.post(
 
       if (accountItem.isSubtotal) {
         errors.push(`${lineNo}行目: 小計行は編集できません`);
+        continue;
+      }
+
+      if (MANUAL_INPUT_ONLY_NAMES.includes(accountItem.name)) {
+        errors.push(`${lineNo}行目: 「${accountItem.name}」は手入力専用のためインポートできません`);
         continue;
       }
 
