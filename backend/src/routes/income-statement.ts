@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { accountItemEffectiveWhere } from "../lib/account-item-filter.js";
 import { requireRole, ROLES } from "../lib/auth.js";
+import { isVehicleCostAccount, getVehicleCostAmount } from "../lib/vehicle-costs.js";
 import * as XLSX from "xlsx";
 
 export const incomeStatementRouter = Router();
@@ -73,12 +74,40 @@ incomeStatementRouter.get("/", async (req: Request, res: Response) => {
     orderBy: [{ locationId: "asc" }, { vehicleNo: "asc" }],
   });
 
-  const records = await prisma.monthlyRecord.findMany({
-    where: {
-      yearMonth,
-      vehicleId: { in: vehicles.map((v) => v.id) },
-    },
-  });
+  const [records, vehicleCosts, accountItemsForCost] = await Promise.all([
+    prisma.monthlyRecord.findMany({
+      where: {
+        yearMonth,
+        vehicleId: { in: vehicles.map((v) => v.id) },
+      },
+    }),
+    prisma.vehicleMonthlyCost.findMany({
+      where: {
+        yearMonth,
+        vehicleId: { in: vehicles.map((v) => v.id) },
+      },
+    }),
+    prisma.accountItem.findMany({
+      where: accountItemEffectiveWhere(yearMonth),
+      select: { id: true, code: true },
+    }),
+  ]);
+
+  const vehicleCostMap = new Map<string, { leaseDepreciation: number; vehicleDepreciation: number; vehicleLease: number; insuranceCost: number; taxCost: number }>();
+  for (const vc of vehicleCosts) {
+    vehicleCostMap.set(vc.vehicleId, {
+      leaseDepreciation: Number(vc.leaseDepreciation),
+      vehicleDepreciation: Number(vc.vehicleDepreciation),
+      vehicleLease: Number(vc.vehicleLease),
+      insuranceCost: Number(vc.insuranceCost),
+      taxCost: Number(vc.taxCost),
+    });
+  }
+
+  const accountCodeById = new Map<string, string>();
+  for (const a of accountItemsForCost) {
+    accountCodeById.set(a.id, a.code);
+  }
 
   const recordMap = new Map<string, number>();
   let lastUpdatedAt: Date | null = null;
@@ -86,6 +115,17 @@ incomeStatementRouter.get("/", async (req: Request, res: Response) => {
     recordMap.set(`${r.vehicleId}-${r.accountItemId}`, Number(r.amount));
     if (!lastUpdatedAt || r.updatedAt > lastUpdatedAt) {
       lastUpdatedAt = r.updatedAt;
+    }
+  }
+
+  // 車両月次費用（イズミクラウド連携）対象科目は VehicleMonthlyCost の値を優先
+  for (const v of vehicles) {
+    const cost = vehicleCostMap.get(v.id);
+    for (const a of accountItemsForCost) {
+      if (isVehicleCostAccount(a.code)) {
+        const amount = getVehicleCostAmount(cost ?? null, a.code);
+        recordMap.set(`${v.id}-${a.id}`, amount);
+      }
     }
   }
 
@@ -121,21 +161,50 @@ incomeStatementRouter.get("/export", async (req: Request, res: Response) => {
     orderBy: [{ locationId: "asc" }, { vehicleNo: "asc" }],
   });
 
-  const accountItems = await prisma.accountItem.findMany({
-    where: accountItemEffectiveWhere(yearMonth),
-    orderBy: { sortOrder: "asc" },
-  });
+  const [accountItems, records, vehicleCosts] = await Promise.all([
+    prisma.accountItem.findMany({
+      where: accountItemEffectiveWhere(yearMonth),
+      orderBy: { sortOrder: "asc" },
+    }),
+    prisma.monthlyRecord.findMany({
+      where: {
+        yearMonth,
+        vehicleId: { in: vehicles.map((v) => v.id) },
+      },
+    }),
+    prisma.vehicleMonthlyCost.findMany({
+      where: {
+        yearMonth,
+        vehicleId: { in: vehicles.map((v) => v.id) },
+      },
+    }),
+  ]);
 
-  const records = await prisma.monthlyRecord.findMany({
-    where: {
-      yearMonth,
-      vehicleId: { in: vehicles.map((v) => v.id) },
-    },
-  });
+  const vehicleCostMap = new Map<string, { leaseDepreciation: number; vehicleDepreciation: number; vehicleLease: number; insuranceCost: number; taxCost: number }>();
+  for (const vc of vehicleCosts) {
+    vehicleCostMap.set(vc.vehicleId, {
+      leaseDepreciation: Number(vc.leaseDepreciation),
+      vehicleDepreciation: Number(vc.vehicleDepreciation),
+      vehicleLease: Number(vc.vehicleLease),
+      insuranceCost: Number(vc.insuranceCost),
+      taxCost: Number(vc.taxCost),
+    });
+  }
 
   const recordMap = new Map<string, number>();
   for (const r of records) {
     recordMap.set(`${r.vehicleId}-${r.accountItemId}`, Number(r.amount));
+  }
+
+  // 車両月次費用（イズミクラウド連携）対象科目は VehicleMonthlyCost の値を優先
+  for (const v of vehicles) {
+    const cost = vehicleCostMap.get(v.id);
+    for (const item of accountItems) {
+      if (isVehicleCostAccount(item.code)) {
+        const amount = getVehicleCostAmount(cost ?? null, item.code);
+        recordMap.set(`${v.id}-${item.id}`, amount);
+      }
+    }
   }
 
   const revenueIds = new Set(
@@ -248,6 +317,7 @@ incomeStatementRouter.get("/history", async (req: Request, res: Response) => {
     include: {
       vehicle: { include: { location: true, course: true } },
       accountItem: true,
+      createdBy: { select: { name: true } },
     },
     orderBy: { createdAt: "desc" },
     take: 200,
@@ -265,6 +335,7 @@ incomeStatementRouter.get("/history", async (req: Request, res: Response) => {
       oldAmount: Number(h.oldAmount),
       newAmount: Number(h.newAmount),
       createdAt: h.createdAt.toISOString(),
+      createdByName: h.createdBy?.name ?? null,
     }))
   );
 });
@@ -324,6 +395,7 @@ incomeStatementRouter.post("/records/bulk", requireRole(ROLES.EDIT_PL), async (r
             yearMonth,
             oldAmount,
             newAmount,
+            createdById: req.user?.id,
           },
         });
       }
@@ -382,6 +454,7 @@ incomeStatementRouter.post("/records", requireRole(ROLES.EDIT_PL), async (req: R
         yearMonth,
         oldAmount,
         newAmount,
+        createdById: req.user?.id,
       },
     });
   }

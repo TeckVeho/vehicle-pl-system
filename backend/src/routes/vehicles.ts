@@ -14,6 +14,7 @@ vehiclesRouter.get("/", async (req: Request, res: Response) => {
       locationId: true,
       vehicleNo: true,
       serviceType: true,
+      tonnage: true,
       externalId: true,
       createdAt: true,
       updatedAt: true,
@@ -37,16 +38,17 @@ vehiclesRouter.post("/sync", requireRole(ROLES.MASTER), async (req: Request, res
     const results: { vehicleNo: string; status: "created" | "updated"; id: string }[] = [];
 
     for (const v of vehicles) {
-      const { locationId, locationCode, vehicleNo, serviceType, externalId, courseId, courseExternalId } = v;
+      const { locationId, locationCode, departmentId, vehicleNo, serviceType, tonnage, externalId, courseId, courseExternalId } = v;
       if (!vehicleNo) continue;
 
+      const locCode = locationCode ?? departmentId;
       let locId = locationId;
-      if (!locId && locationCode) {
+      if (!locId && locCode) {
         const loc = await prisma.location.findUnique({
-          where: { code: String(locationCode) },
+          where: { code: String(locCode) },
         });
         if (!loc) {
-          console.warn(`Location not found for code: ${locationCode}, skipping vehicle ${vehicleNo}`);
+          console.warn(`Location not found for code: ${locCode}, skipping vehicle ${vehicleNo}`);
           continue;
         }
         locId = loc.id;
@@ -54,13 +56,6 @@ vehiclesRouter.post("/sync", requireRole(ROLES.MASTER), async (req: Request, res
       if (!locId) continue;
 
       const vehicleNoStr = String(vehicleNo).trim();
-      const data = {
-        locationId: locId,
-        vehicleNo: vehicleNoStr,
-        serviceType: serviceType ? String(serviceType) : null,
-        externalId: externalId ? String(externalId).trim() : null,
-      };
-
       let courseIdVal: string | null = courseId ?? null;
       if (!courseIdVal && courseExternalId) {
         const course = await prisma.course.findFirst({
@@ -68,9 +63,15 @@ vehiclesRouter.post("/sync", requireRole(ROLES.MASTER), async (req: Request, res
         });
         courseIdVal = course?.id ?? null;
       }
-      if (courseIdVal) {
-        (data as Record<string, unknown>).courseId = courseIdVal;
-      }
+
+      const baseData = {
+        locationId: locId,
+        vehicleNo: vehicleNoStr,
+        serviceType: serviceType ? String(serviceType) : null,
+        externalId: externalId ? String(externalId).trim() : null,
+        courseId: courseIdVal,
+        ...(tonnage !== undefined && tonnage !== null && { tonnage: Number(tonnage) }),
+      };
 
       const existing = externalId
         ? await prisma.vehicle.findFirst({ where: { externalId: String(externalId) } })
@@ -80,20 +81,20 @@ vehiclesRouter.post("/sync", requireRole(ROLES.MASTER), async (req: Request, res
             },
           });
 
-      const updateData: Record<string, unknown> = { ...data };
-      if (courseId !== undefined || courseExternalId !== undefined) {
-        updateData.courseId = courseIdVal;
+      const updateData: { tonnage?: number | null } = {};
+      if (tonnage !== undefined) {
+        updateData.tonnage = tonnage === null ? null : Number(tonnage);
       }
 
       if (existing) {
         const updated = await prisma.vehicle.update({
           where: { id: existing.id },
-          data: updateData,
+          data: { ...baseData, ...updateData },
         });
         results.push({ vehicleNo: vehicleNoStr, status: "updated", id: updated.id });
       } else {
         const created = await prisma.vehicle.create({
-          data: { ...data, courseId: courseIdVal ?? undefined },
+          data: baseData,
         });
         results.push({ vehicleNo: vehicleNoStr, status: "created", id: created.id });
       }

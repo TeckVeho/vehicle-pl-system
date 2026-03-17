@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -20,10 +20,13 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
+      const body = loginId.includes("@")
+        ? { email: loginId, password }
+        : { userId: loginId, password };
       const res = await fetchApi("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(body),
       });
 
       const data = await res.json();
@@ -57,15 +60,15 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="email">メールアドレス</Label>
+              <Label htmlFor="loginId">ユーザーID または メールアドレス</Label>
               <Input
-                id="email"
-                type="email"
-                placeholder="admin@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="loginId"
+                type="text"
+                placeholder="ユーザーID または admin@example.com"
+                value={loginId}
+                onChange={(e) => setLoginId(e.target.value)}
                 required
-                autoComplete="email"
+                autoComplete="username"
                 disabled={isLoading}
                 className="w-full"
               />
@@ -102,7 +105,7 @@ export default function LoginPage() {
           </form>
 
           <p className="mt-6 text-center text-xs text-muted-foreground">
-            デモ用: admin@example.com / password
+            デモ用: admin@example.com または ユーザーID / password
           </p>
         </div>
       </div>

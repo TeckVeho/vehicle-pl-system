@@ -29,9 +29,10 @@
 | 拠点・年月フィルター | 完了 | タブ＋セレクト |
 | 損益表表示 | 完了 | 勘定科目別・車両別 |
 | セル編集 | 完了 | インライン編集、自動保存 |
-| インポート | 完了 | ダイアログから CSV/Excel アップロード |
+| インポート | 完了 | /import ページから CSV/Excel アップロード |
 | 変更履歴 | 完了 | 履歴ダイアログで確認 |
 | Excel 出力 | 完了 | ダウンロード |
+| PL/VPL 切替 | 完了 | ヘッダーメニューのドロップダウンで選択、VPL版は車両関連科目のみ表示 |
 
 ### 日次連携データ
 
@@ -39,6 +40,12 @@
 |------|------|------|
 | 年月・拠点フィルター | 完了 | |
 | 車両別日次集計表示 | 完了 | |
+
+### 連携記録
+
+| 機能 | 状態 | 備考 |
+|------|------|------|
+| 連携ログ一覧 | 完了 | /sync-logs で外部システム連携の成功記録を表示 |
 
 ### データインポート
 
@@ -53,7 +60,7 @@
 
 | 機能 | 状態 | 備考 |
 |------|------|------|
-| 勘定科目マスタ | 完了 | 閲覧・編集（DX/DX管理者） |
+| 勘定科目マスタ | 完了 | 閲覧・編集（DX/DX管理者）、車両関連・ドライバー配賦フラグ対応 |
 | コースマスタ | 完了 | CRUD、新規作成時に車両も自動作成 |
 | コース・車両マッピング | 完了 | 閲覧のみ、拠点フィルター |
 | ユーザー管理 | 完了 | /users、DX管理者のみ、CRUD・一括同期 |
@@ -64,7 +71,8 @@
 |------|------|------|
 | ユーザー CRUD | 完了 | externalId 対応 |
 | ユーザー一括同期 | 完了 | POST /api/users/sync |
-| その他 API | 完了 | dashboard, daily-summary, income-statement, account-items, vehicles, locations, courses, import |
+| ドライバー・乗務記録連携 | 完了 | Driver マスタ、日次乗務記録、ドライバー別月次金額の sync API |
+| その他 API | 完了 | dashboard, daily-summary, daily-operating, income-statement, account-items, vehicles, locations, courses, import, sync-logs |
 
 ---
 
@@ -98,13 +106,17 @@
 
 ## 3. 外部連携の準備状況
 
-| データ | 準備状況 | 備考 |
-|--------|----------|------|
-| **ユーザー** | 対応済み | externalId, POST /api/users/sync で一括同期 |
-| **車両** | 対応済み | externalId 追加、POST /api/vehicles/sync 実装 |
-| **コース** | 対応済み | externalId 追加、POST /api/courses/sync 実装 |
-| **車両・コース** | 対応済み | sync で courseId / courseExternalId 指定可能 |
-| **拠点** | 連携不要 | [location-id-standard.md](location-id-standard.md) で運用ルール確定 |
+| データ | 連携元 | 準備状況 | 備考 |
+|--------|--------|----------|------|
+| **ユーザー** | イズミクラウド | 対応済み | userId（externalId）、POST /api/users/sync で一括同期 |
+| **車両** | イズミクラウド | 対応済み | POST /api/vehicles/sync 実装 |
+| **コース** | イズミクラウド | 対応済み | POST /api/courses/sync 実装 |
+| **車両・コース** | イズミクラウド | 対応済み | sync で courseId / courseExternalId 指定可能 |
+| **ドライバー** | イズミクラウド | 対応済み | POST /api/drivers/sync。ATMTC の紐づきを経由 |
+| **日次乗務記録** | タイムシート | 対応済み | POST /api/driver-assignments/sync、連携後に配賦計算を実行 |
+| **ドライバー別月次金額** | タイムシート | 対応済み | POST /api/driver-monthly-amounts/sync |
+| **部門（Department）** | 連携不要 | 本システム内管理 | [department-id-standard.md](department-id-standard.md) で運用ルール確定 |
+| **日次稼働・走行データ** | タイムシート | 対応済み | POST /api/daily-operating/sync（回数/稼働日フラグ） |
 
 ---
 

@@ -13,7 +13,9 @@ syncLogsRouter.get("/", async (req: Request, res: Response) => {
     });
 
     // locationId から拠点名を取得
-    const locationIds = [...new Set(logs.map((l) => l.locationId).filter(Boolean))] as string[];
+    const locationIds = Array.from(
+      new Set(logs.map((l) => l.locationId).filter(Boolean))
+    ) as string[];
     const locations =
       locationIds.length > 0
         ? await prisma.location.findMany({

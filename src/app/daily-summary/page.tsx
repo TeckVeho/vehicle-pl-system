@@ -44,8 +44,8 @@ function DailySummaryContent() {
   const searchParams = useSearchParams();
   const [locations, setLocations] = useState<Location[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [dailyAmountByVehicle, setDailyAmountByVehicle] = useState<
-    Record<string, number>
+  const [dailyAmountByVehicleByDay, setDailyAmountByVehicleByDay] = useState<
+    Record<string, Record<number, number>>
   >({});
   const [monthlyTotalByVehicle, setMonthlyTotalByVehicle] = useState<
     Record<string, number>
@@ -78,7 +78,7 @@ function DailySummaryContent() {
       const data = await res.json();
 
       setVehicles(data.vehicles ?? []);
-      setDailyAmountByVehicle(data.dailyAmountByVehicle ?? {});
+      setDailyAmountByVehicleByDay(data.dailyAmountByVehicleByDay ?? {});
       setMonthlyTotalByVehicle(data.monthlyTotalByVehicle ?? {});
       setDaysInMonth(data.daysInMonth ?? 31);
     } finally {
@@ -147,7 +147,7 @@ function DailySummaryContent() {
 
       <DailySummaryTable
         vehicles={vehicles}
-        dailyAmountByVehicle={dailyAmountByVehicle}
+        dailyAmountByVehicleByDay={dailyAmountByVehicleByDay}
         monthlyTotalByVehicle={monthlyTotalByVehicle}
         daysInMonth={daysInMonth}
         yearMonth={yearMonth}

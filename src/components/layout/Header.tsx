@@ -12,6 +12,7 @@ import {
   MapPin,
   Link2,
   ChevronDown,
+  Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fetchApi } from "@/lib/api";
@@ -26,8 +27,12 @@ import { useAuthStore, canEditPL, canManageMaster } from "@/stores/authStore";
 
 const topNavItems = [
   { href: "/dashboard", label: "ダッシュボード", icon: LayoutDashboard, roles: null },
-  { href: "/income-statement", label: "車両損益計算書", icon: FileSpreadsheet, roles: null },
   { href: "/daily-summary", label: "日次連携データ", icon: Calendar, roles: null, hidden: true },
+];
+
+const plSubMenu = [
+  { href: "/income-statement?mode=pl", label: "PL版（全科目）", icon: FileSpreadsheet, roles: null },
+  { href: "/income-statement?mode=vpl", label: "VPL版（車両関連のみ）", icon: FileSpreadsheet, roles: null },
 ];
 
 const dataSubMenu = [
@@ -37,6 +42,7 @@ const dataSubMenu = [
 
 const masterSubMenu = [
   { href: "/account-items", label: "勘定科目マスタ", icon: BookOpen, roles: "MASTER" as const },
+  { href: "/arbitrary-insurance", label: "任意保険マスタ", icon: Shield, roles: "MASTER" as const },
   { href: "/course-vehicle-mapping", label: "コース・車両マッピング", icon: MapPin, roles: null },
 ];
 
@@ -68,7 +74,8 @@ export function Header() {
   const visibleMasterSubMenu = masterSubMenu.filter(isItemVisible);
 
   const isDataActive = pathname.startsWith("/import") || pathname.startsWith("/sync-logs");
-  const isMasterActive = pathname.startsWith("/account-items") || pathname.startsWith("/course-vehicle-mapping");
+  const isMasterActive = pathname.startsWith("/account-items") || pathname.startsWith("/arbitrary-insurance") || pathname.startsWith("/course-vehicle-mapping");
+  const isPLActive = pathname.startsWith("/income-statement");
 
   const navLinkClass = (isActive: boolean) =>
     cn(
@@ -102,6 +109,28 @@ export function Header() {
                 </Link>
               );
             })}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className={navLinkClass(isPLActive)}>
+                  <FileSpreadsheet className="h-4 w-4 shrink-0" />
+                  車両損益計算書
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="min-w-[200px]">
+                {plSubMenu.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <DropdownMenuItem key={item.href} asChild>
+                      <Link href={item.href} className="flex items-center gap-2 cursor-pointer">
+                        <Icon className="h-4 w-4 shrink-0" />
+                        {item.label}
+                      </Link>
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
             {visibleDataSubMenu.length > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

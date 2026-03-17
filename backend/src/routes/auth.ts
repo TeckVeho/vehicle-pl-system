@@ -12,18 +12,26 @@ export const authRouter = Router();
 
 authRouter.post("/login", async (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body;
+    const { email, userId, password } = req.body;
 
-    if (!email || !password) {
+    if ((!email && !userId) || !password) {
       res.status(400).json({
-        error: "メールアドレスとパスワードを入力してください",
+        error: "ユーザーID（またはメールアドレス）とパスワードを入力してください",
       });
       return;
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: String(email).trim() },
-    });
+    let user = null;
+    if (userId) {
+      user = await prisma.user.findFirst({
+        where: { externalId: String(userId).trim() },
+      });
+    }
+    if (!user && email) {
+      user = await prisma.user.findUnique({
+        where: { email: String(email).trim() },
+      });
+    }
 
     if (user && (await bcrypt.compare(String(password), user.passwordHash))) {
       const isProduction = process.env.NODE_ENV === "production";
@@ -48,7 +56,7 @@ authRouter.post("/login", async (req: Request, res: Response) => {
     }
 
     res.status(401).json({
-      error: "メールアドレスまたはパスワードが正しくありません",
+      error: "ユーザーID（またはメールアドレス）またはパスワードが正しくありません",
     });
   } catch {
     res.status(500).json({ error: "サーバーエラーが発生しました" });

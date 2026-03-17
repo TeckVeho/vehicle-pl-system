@@ -22,6 +22,7 @@ interface HistoryEntry {
   oldAmount: number;
   newAmount: number;
   createdAt: string;
+  createdByName: string | null;
 }
 
 interface HistoryDialogProps {
@@ -73,6 +74,7 @@ export function HistoryDialog({ open, yearMonth, onClose }: HistoryDialogProps) 
               <thead className="sticky top-0 bg-background z-10">
                 <tr className="border-b text-xs text-muted-foreground">
                   <th className="py-2 px-3 text-left font-medium">日時</th>
+                  <th className="py-2 px-3 text-left font-medium">変更者</th>
                   <th className="py-2 px-3 text-left font-medium">拠点</th>
                   <th className="py-2 px-3 text-left font-medium">車両</th>
                   <th className="py-2 px-3 text-left font-medium">勘定科目</th>
@@ -88,6 +90,9 @@ export function HistoryDialog({ open, yearMonth, onClose }: HistoryDialogProps) 
                     <tr key={h.id} className="border-b border-border/30 hover:bg-muted/30 transition-colors">
                       <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">
                         {formatDate(h.createdAt)}
+                      </td>
+                      <td className="py-2 px-3 text-xs text-muted-foreground">
+                        {h.createdByName ?? "—"}
                       </td>
                       <td className="py-2 px-3 text-xs text-muted-foreground">
                         {h.locationName}

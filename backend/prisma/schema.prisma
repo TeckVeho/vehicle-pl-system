@@ -19,6 +19,8 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  createdRecordHistories MonthlyRecordHistory[]
+
   @@index([externalId])
   @@index([role])
 }
@@ -29,6 +31,7 @@ model Location {
   name      String
   vehicles  Vehicle[]
   courses   Course[]
+  drivers   Driver[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -51,18 +54,22 @@ model Course {
 }
 
 model Vehicle {
-  id           String         @id @default(cuid())
-  locationId   String
-  location     Location       @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  courseId     String?
-  course       Course?        @relation(fields: [courseId], references: [id], onDelete: SetNull)
-  vehicleNo    String
-  serviceType  String?        // 便種別（例: ＣＶＳ）
-  externalId   String?        // 外部システム連携用
-  monthlyRecords MonthlyRecord[]
-  recordHistories MonthlyRecordHistory[]
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  id                    String                 @id @default(cuid())
+  locationId            String
+  location              Location               @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  courseId              String?
+  course                Course?                @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  vehicleNo             String
+  serviceType           String?                // 便種別（例: ＣＶＳ）
+  tonnage               Float?                 // トン数（損害保険料(任意保険)計算用）
+  externalId            String?                // 外部システム連携用
+  monthlyRecords        MonthlyRecord[]
+  recordHistories       MonthlyRecordHistory[]
+  dailyOperatingRecords DailyOperatingRecord[]
+  dailyDriverAssignments DailyDriverAssignment[]
+  monthlyCosts          VehicleMonthlyCost[]
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
 
   @@unique([locationId, vehicleNo])
   @@index([locationId])
@@ -70,23 +77,115 @@ model Vehicle {
   @@index([externalId])
 }
 
+// 車両月次費用（イズミクラウド連携: リース車償却・車両償却費・車両リース・損害保険料・賦課税）
+model VehicleMonthlyCost {
+  id                    String   @id @default(cuid())
+  vehicleId             String
+  vehicle               Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  yearMonth             String   // "YYYY-MM"
+  leaseDepreciation     Float    @default(0)  // 6191 リース車償却
+  vehicleDepreciation   Float    @default(0)  // 6192 車両償却費
+  vehicleLease          Float    @default(0)  // 6193 車両リース
+  insuranceCost         Float    @default(0)  // 6194 損害保険料(自賠責)
+  taxCost               Float    @default(0)  // 6195 賦課税(自動車税)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([vehicleId, yearMonth])
+  @@index([yearMonth])
+  @@index([vehicleId])
+}
+
+model Driver {
+  id                    String                 @id @default(cuid())
+  locationId            String
+  location              Location               @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  code                  String                 // 社員番号など
+  name                  String
+  externalId            String?                // 外部システム連携用
+  dailyAssignments      DailyDriverAssignment[]
+  monthlyAmounts        DriverMonthlyAmount[]
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  @@unique([locationId, code])
+  @@index([locationId])
+  @@index([externalId])
+}
+
+// 日次乗務記録（タイムシート連携）
+model DailyDriverAssignment {
+  id        String   @id @default(cuid())
+  driverId  String
+  driver    Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  vehicleId String
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  date      String   // "YYYY-MM-DD"
+  yearMonth String   // "YYYY-MM"（検索用）
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([driverId, vehicleId, date])
+  @@index([yearMonth, vehicleId])
+  @@index([yearMonth, driverId])
+}
+
+// ドライバー別・勘定科目別・月次金額（タイムシート連携）
+model DriverMonthlyAmount {
+  id            String      @id @default(cuid())
+  driverId      String
+  driver        Driver      @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  accountItemId String
+  accountItem   AccountItem @relation(fields: [accountItemId], references: [id], onDelete: Cascade)
+  yearMonth     String      // "YYYY-MM"
+  amount        Float       @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([driverId, accountItemId, yearMonth])
+  @@index([yearMonth])
+  @@index([driverId])
+}
+
 model AccountItem {
-  id            String         @id @default(cuid())
-  code          String
-  name          String
-  category      String         // revenue | expense | subtotal_revenue | subtotal_expense | subtotal_gross | summary
-  sortOrder     Int
-  isSubtotal    Boolean        @default(false)
-  linkageMethod String?        // 連携方法（データ連携の見える化用）
-  effectiveFrom String?        // 適用開始年月 "YYYY-MM"
-  effectiveTo   String?        // 適用終了年月 "YYYY-MM"
-  monthlyRecords MonthlyRecord[]
-  recordHistories MonthlyRecordHistory[]
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  id                  String         @id @default(cuid())
+  code                String
+  name                String
+  category            String         // revenue | expense | subtotal_revenue | subtotal_expense | subtotal_gross | summary
+  sortOrder           Int
+  isSubtotal          Boolean        @default(false)
+  isVehicleRelated    Boolean        @default(false) // VPL版で表示する車両関連科目フラグ
+  isDriverRelated     Boolean        @default(false) // ドライバー配賦対象科目（乗務員給料等）
+  revenuePricingType  String?        // 売上単価体系: "per_run"=回数単価 | "monthly"=月額単価 | null=均等割り
+  linkageMethod       String?        // 連携方法（データ連携の見える化用）
+  effectiveFrom       String?        // 適用開始年月 "YYYY-MM"
+  effectiveTo         String?        // 適用終了年月 "YYYY-MM"
+  monthlyRecords      MonthlyRecord[]
+  recordHistories     MonthlyRecordHistory[]
+  driverMonthlyAmounts DriverMonthlyAmount[]
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
 
   @@unique([code, name])
   @@index([category])
+  @@index([isVehicleRelated])
+  @@index([isDriverRelated])
+}
+
+// 日次稼働・走行データ（外部API連携用）
+model DailyOperatingRecord {
+  id           String   @id @default(cuid())
+  vehicleId    String
+  vehicle      Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  date         String   // "YYYY-MM-DD"
+  runCount     Int      @default(0)   // その日の走行回数（per_run用）
+  isOperating  Boolean   @default(false) // 稼働日か（予備車含む、monthly用）
+  yearMonth    String   // "YYYY-MM"（検索用インデックス）
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([vehicleId, date])
+  @@index([yearMonth, vehicleId])
 }
 
 model MonthlyRecord {
@@ -115,10 +214,22 @@ model MonthlyRecordHistory {
   oldAmount     Float
   newAmount     Float
   createdAt     DateTime    @default(now())
+  createdById   String?
+  createdBy     User?       @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([yearMonth])
   @@index([vehicleId])
   @@index([accountItemId])
+}
+
+// 任意保険マスタ（トン数別月額保険料・編集のみ）
+model ArbitraryInsuranceMaster {
+  id        String   @id @default(cuid())
+  tonnage   Float    @unique  // トン数（2, 4, 8, 10 等）
+  amount    Float    @default(0)  // 月額保険料（円）
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // 外部システムからのデータ連携記録（成功データのみ）

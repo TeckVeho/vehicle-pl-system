@@ -23,6 +23,9 @@ accountItemsRouter.post("/", requireRole(ROLES.MASTER), async (req: Request, res
       category,
       sortOrder,
       isSubtotal,
+      isVehicleRelated,
+      isDriverRelated,
+      revenuePricingType,
       linkageMethod,
       effectiveFrom,
       effectiveTo,
@@ -45,6 +48,12 @@ accountItemsRouter.post("/", requireRole(ROLES.MASTER), async (req: Request, res
         category: String(category),
         sortOrder: sortOrder ?? nextSort,
         isSubtotal: Boolean(isSubtotal ?? false),
+        isVehicleRelated: Boolean(isVehicleRelated ?? false),
+        isDriverRelated: Boolean(isDriverRelated ?? false),
+        revenuePricingType:
+          revenuePricingType && ["per_run", "monthly"].includes(String(revenuePricingType))
+            ? String(revenuePricingType)
+            : null,
         linkageMethod:
           linkageMethod && String(linkageMethod).trim()
             ? String(linkageMethod).trim()
@@ -75,6 +84,9 @@ accountItemsRouter.put("/:id", requireRole(ROLES.MASTER), async (req: Request, r
       category,
       sortOrder,
       isSubtotal,
+      isVehicleRelated,
+      isDriverRelated,
+      revenuePricingType,
       linkageMethod,
       effectiveFrom,
       effectiveTo,
@@ -88,6 +100,14 @@ accountItemsRouter.put("/:id", requireRole(ROLES.MASTER), async (req: Request, r
         ...(category !== undefined && { category: String(category) }),
         ...(sortOrder !== undefined && { sortOrder: Number(sortOrder) }),
         ...(isSubtotal !== undefined && { isSubtotal: Boolean(isSubtotal) }),
+        ...(isVehicleRelated !== undefined && { isVehicleRelated: Boolean(isVehicleRelated) }),
+        ...(isDriverRelated !== undefined && { isDriverRelated: Boolean(isDriverRelated) }),
+        ...(revenuePricingType !== undefined && {
+          revenuePricingType:
+            revenuePricingType && ["per_run", "monthly"].includes(String(revenuePricingType))
+              ? String(revenuePricingType)
+              : null,
+        }),
         ...(linkageMethod !== undefined && {
           linkageMethod:
             linkageMethod && String(linkageMethod).trim()
@@ -119,12 +139,13 @@ accountItemsRouter.delete("/:id", requireRole(ROLES.MASTER), async (req: Request
   try {
     const { id } = req.params;
 
-    const count = await prisma.monthlyRecord.count({
-      where: { accountItemId: id },
-    });
-    if (count > 0) {
+    const [monthlyCount, driverAmountCount] = await Promise.all([
+      prisma.monthlyRecord.count({ where: { accountItemId: id } }),
+      prisma.driverMonthlyAmount.count({ where: { accountItemId: id } }),
+    ]);
+    if (monthlyCount > 0 || driverAmountCount > 0) {
       res.status(400).json({
-        error: `この勘定科目は ${count} 件の月次データで使用されています。削除するには先に該当データを削除してください。`,
+        error: `この勘定科目は月次データ${monthlyCount}件、ドライバー配賦データ${driverAmountCount}件で使用されています。削除するには先に該当データを削除してください。`,
       });
       return;
     }

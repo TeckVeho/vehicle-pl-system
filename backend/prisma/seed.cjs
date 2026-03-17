@@ -25,13 +25,13 @@ const ACCOUNT_ITEMS = [
   { code: "5010", name: "不動産収入", category: "revenue", sortOrder: 13 },
   { code: "5010", name: "人材派遣収入", category: "revenue", sortOrder: 14 },
   { code: "SUBTOTAL_REV", name: "純売上高", category: "subtotal_revenue", sortOrder: 15, isSubtotal: true },
-  { code: "6138", name: "乗務員給料", category: "expense", sortOrder: 16 },
-  { code: "6139", name: "業務給料", category: "expense", sortOrder: 17 },
+  { code: "6138", name: "乗務員給料", category: "expense", sortOrder: 16, isDriverRelated: true },
+  { code: "6139", name: "業務給料", category: "expense", sortOrder: 17, isDriverRelated: true },
   { code: "6141", name: "人材派遣費", category: "expense", sortOrder: 18 },
   { code: "6145", name: "賞与", category: "expense", sortOrder: 19 },
-  { code: "6147", name: "通勤手当", category: "expense", sortOrder: 20 },
-  { code: "6148", name: "法定福利費", category: "expense", sortOrder: 21 },
-  { code: "6149", name: "福利厚生費", category: "expense", sortOrder: 22 },
+  { code: "6147", name: "通勤手当", category: "expense", sortOrder: 20, isDriverRelated: true },
+  { code: "6148", name: "法定福利費", category: "expense", sortOrder: 21, isDriverRelated: true },
+  { code: "6149", name: "福利厚生費", category: "expense", sortOrder: 22, isDriverRelated: true },
   { code: "6150", name: "旅費交通地", category: "expense", sortOrder: 23 },
   { code: "6151", name: "消耗品", category: "expense", sortOrder: 24 },
   { code: "6154", name: "修繕費", category: "expense", sortOrder: 25 },
@@ -114,13 +114,16 @@ async function main() {
       where: {
         code_name: { code: item.code, name: item.name },
       },
-      update: {},
+      update: {
+        isDriverRelated: item.isDriverRelated ?? false,
+      },
       create: {
         code: item.code,
         name: item.name,
         category: item.category,
         sortOrder: item.sortOrder,
         isSubtotal: item.isSubtotal ?? false,
+        isDriverRelated: item.isDriverRelated ?? false,
       },
     });
   }
@@ -130,6 +133,21 @@ async function main() {
       where: { code: loc.code },
       update: {},
       create: loc,
+    });
+  }
+
+  // 任意保険マスタ（トン数別月額保険料・編集のみ）
+  const ARBITRARY_INSURANCE_TONNAGES = [
+    { tonnage: 2, amount: 0, sortOrder: 1 },
+    { tonnage: 4, amount: 0, sortOrder: 2 },
+    { tonnage: 8, amount: 0, sortOrder: 3 },
+    { tonnage: 10, amount: 0, sortOrder: 4 },
+  ];
+  for (const item of ARBITRARY_INSURANCE_TONNAGES) {
+    await prisma.arbitraryInsuranceMaster.upsert({
+      where: { tonnage: item.tonnage },
+      update: {},
+      create: item,
     });
   }
 

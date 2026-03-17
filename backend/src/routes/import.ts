@@ -161,6 +161,7 @@ importRouter.post(
               yearMonth,
               oldAmount,
               newAmount: amount,
+              createdById: req.user?.id,
             },
           });
         }

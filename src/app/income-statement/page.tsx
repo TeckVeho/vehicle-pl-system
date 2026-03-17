@@ -7,10 +7,9 @@ import { LoadingOverlay } from "@/components/income-statement/LoadingOverlay";
 import { LocationTabBar } from "@/components/income-statement/LocationTabBar";
 import { PLTable, type DisplayMode } from "@/components/income-statement/PLTable";
 import { PLTableSkeleton } from "@/components/income-statement/PLTableSkeleton";
-import { ImportDialog } from "@/components/income-statement/ImportDialog";
 import { HistoryDialog } from "@/components/income-statement/HistoryDialog";
 import { Button } from "@/components/ui/button";
-import { Download, Upload, History, Pencil, PencilOff } from "lucide-react";
+import { Download, History, Pencil, PencilOff } from "lucide-react";
 import { getCategoryLabel } from "@/lib/calc";
 import { fetchApi, getApiUrl } from "@/lib/api";
 import { useAuthStore, canEditPL } from "@/stores/authStore";
@@ -102,6 +101,7 @@ interface AccountItem {
   category: string;
   sortOrder: number;
   isSubtotal: boolean;
+  isVehicleRelated: boolean;
 }
 
 function IncomeStatementContent() {
@@ -122,12 +122,12 @@ function IncomeStatementContent() {
   const [locationId, setLocationId] = useState<string | null>(() => {
     return searchParams.get("locationId");
   });
+  const plMode = searchParams.get("mode") === "vpl" ? "vpl" : "pl";
   const [searchQuery, setSearchQuery] = useState("");
   const [displayMode, setDisplayMode] = useState<DisplayMode>("course");
   const [metadataLoading, setMetadataLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
   const loading = metadataLoading || dataLoading;
@@ -136,17 +136,38 @@ function IncomeStatementContent() {
     setDisplayMode(mode);
   };
 
+  /** 勘定科目ごとの登録状況（revenue/expenseのみ、拠点内で1件以上レコードがあれば登録済み） */
+  const importStatus = useMemo(() => {
+    const status: Record<string, boolean> = {};
+    for (const item of accountItems) {
+      if (item.category !== "revenue" && item.category !== "expense") continue;
+      const hasRecord = vehicles.some(
+        (v) => records[`${v.id}-${item.id}`] !== undefined
+      );
+      status[item.id] = hasRecord;
+    }
+    return status;
+  }, [accountItems, vehicles, records]);
+
   const filteredAccountItems = useMemo(() => {
-    if (!searchQuery.trim()) return accountItems;
+    let base = accountItems;
+
+    if (plMode === "vpl") {
+      base = base.filter(
+        (item) => item.isVehicleRelated || item.isSubtotal || item.category === "summary"
+      );
+    }
+
+    if (!searchQuery.trim()) return base;
     const q = searchQuery.trim().toLowerCase();
-    return accountItems.filter((item) => {
+    return base.filter((item) => {
       if (item.isSubtotal || item.category === "summary") return true;
       const nameMatch = item.name.toLowerCase().includes(q);
       const codeMatch = item.code.toLowerCase().includes(q);
       const categoryMatch = getCategoryLabel(item.category).toLowerCase().includes(q);
       return nameMatch || codeMatch || categoryMatch;
     });
-  }, [accountItems, searchQuery]);
+  }, [accountItems, searchQuery, plMode]);
 
   const fetchMetadata = useCallback(async (ym: string) => {
     const cached = readMetadataCache(ym);
@@ -333,22 +354,21 @@ function IncomeStatementContent() {
     window.open(`${base}/api/income-statement/export?${params}`, "_blank");
   };
 
-  const refetchLocationData = useCallback(() => {
-    if (locationId) {
-      fetchLocationData(yearMonth, locationId, false).then((result) => {
-        setVehicles(result.vehicles);
-        setRecords(result.records);
-        setLastUpdatedAt(result.lastUpdatedAt);
-      });
-    }
-  }, [locationId, yearMonth, fetchLocationData]);
-
   return (
     <div className="pb-12 relative">
       <div className="flex items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-3xl font-bold tracking-tight">車両損益計算書</h1>
+            {plMode === "vpl" ? (
+              <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-700 border border-blue-200">
+                VPL版
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground border border-border">
+                PL版
+              </span>
+            )}
             {loading && vehicles.length > 0 && (
               <span className="text-xs text-muted-foreground animate-pulse">
                 更新中...
@@ -393,16 +413,6 @@ function IncomeStatementContent() {
                   </>
                 )}
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setImportOpen(true)}
-                disabled={!locationId}
-                title={!locationId ? "拠点を読み込み中です" : "Excelインポート"}
-              >
-                <Upload className="h-4 w-4 mr-1.5" />
-                インポート
-              </Button>
             </>
           )}
           <Button
@@ -446,6 +456,7 @@ function IncomeStatementContent() {
           yearMonth={yearMonth}
           displayMode={displayMode}
           editMode={canEdit && editMode}
+          importStatus={importStatus}
           onUpdateRecord={handleUpdateRecord}
           onUpdateCourseRecord={handleUpdateCourseRecord}
         />
@@ -455,14 +466,6 @@ function IncomeStatementContent() {
         locationId={locationId ?? ""}
         locations={locations}
         onLocationChange={setLocationId}
-      />
-
-      <ImportDialog
-        open={importOpen}
-        yearMonth={yearMonth}
-        locationId={locationId ?? ""}
-        onClose={() => setImportOpen(false)}
-        onSuccess={refetchLocationData}
       />
 
       <HistoryDialog

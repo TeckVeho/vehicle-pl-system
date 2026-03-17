@@ -31,6 +31,9 @@ interface AccountItem {
   category: string;
   sortOrder: number;
   isSubtotal: boolean;
+  isVehicleRelated: boolean;
+  isDriverRelated: boolean;
+  revenuePricingType: string | null;
   linkageMethod: string | null;
   effectiveFrom: string | null;
   effectiveTo: string | null;
@@ -47,6 +50,12 @@ function getYearMonths(): string[] {
   }
   return months.reverse();
 }
+
+const REVENUE_PRICING_LABELS: Record<string, string> = {
+  per_run: "回数単価",
+  monthly: "月額単価",
+  "": "均等割り（デフォルト）",
+};
 
 const CATEGORY_LABELS: Record<string, string> = {
   revenue: "売上",
@@ -82,6 +91,9 @@ export default function AccountItemsPage() {
     name: "",
     category: "revenue",
     isSubtotal: false,
+    isVehicleRelated: false,
+    isDriverRelated: false,
+    revenuePricingType: "" as string,
     linkageMethod: "" as string,
     effectiveFrom: "" as string,
     effectiveTo: "" as string,
@@ -136,6 +148,9 @@ export default function AccountItemsPage() {
       name: "",
       category: "revenue",
       isSubtotal: false,
+      isVehicleRelated: false,
+      isDriverRelated: false,
+      revenuePricingType: "",
       linkageMethod: "",
       effectiveFrom: "",
       effectiveTo: "",
@@ -151,6 +166,9 @@ export default function AccountItemsPage() {
       name: item.name,
       category: item.category,
       isSubtotal: item.isSubtotal,
+      isVehicleRelated: item.isVehicleRelated,
+      isDriverRelated: item.isDriverRelated,
+      revenuePricingType: item.revenuePricingType ?? "",
       linkageMethod: item.linkageMethod ?? "",
       effectiveFrom: item.effectiveFrom ?? "",
       effectiveTo: item.effectiveTo ?? "",
@@ -169,6 +187,8 @@ export default function AccountItemsPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ...form,
+            isDriverRelated: form.isDriverRelated,
+            revenuePricingType: form.revenuePricingType || null,
             linkageMethod: form.linkageMethod || null,
             effectiveFrom: form.effectiveFrom || null,
             effectiveTo: form.effectiveTo || null,
@@ -185,6 +205,8 @@ export default function AccountItemsPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ...form,
+            isDriverRelated: form.isDriverRelated,
+            revenuePricingType: form.revenuePricingType || null,
             linkageMethod: form.linkageMethod || null,
             effectiveFrom: form.effectiveFrom || null,
             effectiveTo: form.effectiveTo || null,
@@ -355,10 +377,22 @@ export default function AccountItemsPage() {
                   >
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-foreground">{item.name}</div>
-                      <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
+                        <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
                         <span className="font-mono">{item.code}</span>
                         {item.isSubtotal && (
                           <span className="px-1.5 py-0.5 rounded bg-muted/60">小計</span>
+                        )}
+                        {item.isVehicleRelated && (
+                          <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 border border-blue-200">車両関連</span>
+                        )}
+                        {item.isDriverRelated && (
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">ドライバー配賦</span>
+                        )}
+                        {item.revenuePricingType && (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">
+                            {REVENUE_PRICING_LABELS[item.revenuePricingType] ??
+                              item.revenuePricingType}
+                          </span>
                         )}
                         {item.linkageMethod && (
                           <span className="truncate max-w-[200px]">
@@ -454,6 +488,38 @@ export default function AccountItemsPage() {
                 </SelectContent>
               </Select>
             </div>
+            {form.category === "revenue" && (
+              <div className="grid gap-2">
+                <Label htmlFor="revenuePricingType">売上単価体系</Label>
+                <Select
+                  value={form.revenuePricingType || "none"}
+                  onValueChange={(v) =>
+                    setForm((f) => ({
+                      ...f,
+                      revenuePricingType: v === "none" ? "" : v,
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="均等割り（デフォルト）" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">
+                      {REVENUE_PRICING_LABELS[""]}
+                    </SelectItem>
+                    <SelectItem value="per_run">
+                      {REVENUE_PRICING_LABELS.per_run}
+                    </SelectItem>
+                    <SelectItem value="monthly">
+                      {REVENUE_PRICING_LABELS.monthly}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  回数単価: 走行日に計上。月額単価: 稼働日で日割り。
+                </p>
+              </div>
+            )}
             <div className="grid gap-2">
               <Label htmlFor="linkageMethod">連携方法</Label>
               <textarea
@@ -482,6 +548,34 @@ export default function AccountItemsPage() {
               />
               <Label htmlFor="isSubtotal" className="font-normal">
                 小計行として表示
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="isVehicleRelated"
+                checked={form.isVehicleRelated}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, isVehicleRelated: e.target.checked }))
+                }
+                className="rounded border-input"
+              />
+              <Label htmlFor="isVehicleRelated" className="font-normal">
+                車両関連科目（VPL版で表示）
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="isDriverRelated"
+                checked={form.isDriverRelated}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, isDriverRelated: e.target.checked }))
+                }
+                className="rounded border-input"
+              />
+              <Label htmlFor="isDriverRelated" className="font-normal">
+                ドライバー配賦対象（タイムシート連携で按分）
               </Label>
             </div>
             <div className="grid grid-cols-2 gap-4">

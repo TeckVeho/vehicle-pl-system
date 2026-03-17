@@ -59,11 +59,12 @@ flowchart LR
 | 機能 | パス | 説明 |
 |------|------|------|
 | ルート | / | ダッシュボードへリダイレクト |
-| ログイン | /login | メール・パスワード認証（Cookie ベース） |
+| ログイン | /login | ユーザーID または メール・パスワード認証（Cookie ベース） |
 | ダッシュボード | /dashboard | 年月・拠点別の売上・原価・粗利益サマリー |
 | 車両損益計算書 | /income-statement | 損益データの閲覧・編集・インポート・履歴・Excel出力 |
-| 日次連携データ | /daily-summary | 日次集計データの閲覧 |
+| 日次連携データ | /daily-summary | 日次集計データの閲覧（ヘッダー非表示） |
 | データインポート | /import | CSV/Excel による月次データ一括取込（編集権限者のみ） |
+| 連携記録 | /sync-logs | 外部システム連携の成功ログ一覧 |
 | 勘定科目マスタ | /account-items | 勘定科目の閲覧・編集（DX/DX管理者のみ） |
 | コース・車両マッピング | /course-vehicle-mapping | コースと車両の紐づけ閲覧 |
 | コースマスタ | /courses | コースの CRUD（DX/DX管理者のみ、ヘッダー未掲載） |
@@ -99,6 +100,9 @@ erDiagram
     AccountItem ||--o{ MonthlyRecord : "1:N"
     Vehicle ||--o{ MonthlyRecordHistory : "1:N"
     AccountItem ||--o{ MonthlyRecordHistory : "1:N"
+    Location ||--o{ Driver : "1:N"
+    Driver ||--o{ DailyDriverAssignment : "1:N"
+    Vehicle ||--o{ DailyDriverAssignment : "1:N"
 
     Location {
         string id PK
@@ -140,19 +144,23 @@ erDiagram
 
 ## 6. 外部システム連携
 
-| データ | 連携状況 | 備考 |
-|--------|----------|------|
-| **ユーザー** | 対応済み | `externalId` で連携。`POST /api/users/sync` で一括同期 |
-| **車両** | 対応済み | `externalId` 追加。`POST /api/vehicles/sync` で一括同期 |
-| **コース** | 対応済み | `externalId` 追加。`POST /api/courses/sync` で一括同期 |
-| **車両・コース** | 対応済み | sync で courseId / courseExternalId 指定可能 |
-| **拠点** | 連携不要 | [location-id-standard.md](location-id-standard.md) 参照 |
+| データ | 連携元 | 連携状況 | 備考 |
+|--------|--------|----------|------|
+| **ユーザー** | イズミクラウド | 対応済み | `userId`（externalId）で連携。`POST /api/users/sync` で一括同期 |
+| **車両** | イズミクラウド | 対応済み | `POST /api/vehicles/sync` で一括同期 |
+| **コース** | イズミクラウド | 対応済み | `POST /api/courses/sync` で一括同期 |
+| **車両・コース** | イズミクラウド | 対応済み | sync で courseId / courseExternalId 指定可能 |
+| **ドライバー** | イズミクラウド | 対応済み | `POST /api/drivers/sync`。ATMTC の紐づきを経由 |
+| **日次乗務記録** | タイムシート | 対応済み | `POST /api/driver-assignments/sync`、連携後に配賦計算を実行 |
+| **ドライバー別月次金額** | タイムシート | 対応済み | `POST /api/driver-monthly-amounts/sync` |
+| **日次稼働・走行データ** | タイムシート | 対応済み | `POST /api/daily-operating/sync`（回数/稼働日フラグ） |
+| **部門（Department）** | 連携不要 | 本システム内管理 | [department-id-standard.md](department-id-standard.md) 参照 |
 
-### 拠点IDの整合性
+### 部門IDの整合性
 
-- 拠点データは本システム内で管理し、外部連携は行わない
-- **標準識別子**: `Location.code` を他システムとの共通識別子として使用（詳細は [location-id-standard.md](location-id-standard.md) 参照）
-- シード投入時や他システム構築時に、同一の `Location.code` を使用すること
+- 部門データは本システム内で管理し、イズミクラウドと department id で整合
+- **標準識別子**: department id（本システム内部では `Location.code` にマッピング）
+- 詳細は [department-id-standard.md](department-id-standard.md) を参照
 
 ---
 
@@ -161,15 +169,23 @@ erDiagram
 | プレフィックス | 説明 |
 |----------------|------|
 | `/api/auth` | ログイン・ログアウト |
-| `/api/users` | ユーザー CRUD・一括同期（externalId 対応） |
+| `/api/users` | ユーザー CRUD・一括同期（userId/externalId 対応） |
 | `/api/dashboard` | ダッシュボードサマリー |
 | `/api/daily-summary` | 日次連携データ |
+| `/api/daily-operating` | 日次稼働・走行データ sync |
+| `/api/drivers` | ドライバー一覧・sync |
+| `/api/driver-assignments` | 日次乗務記録 sync |
+| `/api/driver-monthly-amounts` | ドライバー別月次金額 sync |
 | `/api/income-statement` | 損益計算書データ |
 | `/api/account-items` | 勘定科目 |
 | `/api/vehicles` | 車両一覧 |
 | `/api/locations` | 拠点一覧 |
 | `/api/courses` | コース CRUD |
 | `/api/import` | データインポート（CSV/Excel） |
+| `/api/sync-logs` | 連携記録の取得・登録 |
+
+- 車両損益計算書の外部連携の技術仕様は [external-integration-spec.md](external-integration-spec.md) を参照
+- ドライバー配賦 API の詳細は [driver-allocation-api.md](driver-allocation-api.md) を参照
 
 ---
 

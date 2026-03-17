@@ -30,16 +30,17 @@ coursesRouter.post("/sync", requireRole(ROLES.MASTER), async (req: Request, res:
     const results: { code: string; status: "created" | "updated"; id: string }[] = [];
 
     for (const c of coursesPayload) {
-      const { locationId, locationCode, name, code, sortOrder, externalId } = c;
+      const { locationId, locationCode, departmentId, name, code, sortOrder, externalId } = c;
       if (!name || !code) continue;
 
+      const locCode = locationCode ?? departmentId;
       let locId = locationId;
-      if (!locId && locationCode) {
+      if (!locId && locCode) {
         const loc = await prisma.location.findUnique({
-          where: { code: String(locationCode) },
+          where: { code: String(locCode) },
         });
         if (!loc) {
-          console.warn(`Location not found for code: ${locationCode}, skipping course ${code}`);
+          console.warn(`Location not found for code: ${locCode}, skipping course ${code}`);
           continue;
         }
         locId = loc.id;

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useRef, useState, useEffect } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, CheckCircle2, Circle } from "lucide-react";
 import {
   isRevenueItem,
   isExpenseItem,
@@ -13,6 +13,11 @@ import {
   EXPENSE_CATEGORY,
 } from "@/lib/calc";
 import { formatCurrency, formatPercent } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { EditableCell, type ArrowDirection } from "./EditableCell";
 
 interface AccountItem {
@@ -42,11 +47,12 @@ interface CourseGroup {
 }
 
 function formatVehicleDisplay(v: Vehicle) {
-  const courseName = v.course?.name ?? v.vehicleNo;
+  const courseName = v.course?.name ?? "コースなし";
   const digitsOnly = v.vehicleNo.replace(/\D/g, "");
   const last4 = digitsOnly.slice(-4) || v.vehicleNo;
   const serviceLine = v.serviceType ? `${v.serviceType}（${last4}）` : `（${last4}）`;
-  return { courseName, serviceLine };
+  const courseCount = v.course ? 1 : 0;
+  return { courseName, serviceLine, courseCount };
 }
 
 interface PLTableProps {
@@ -56,6 +62,8 @@ interface PLTableProps {
   yearMonth: string;
   displayMode: DisplayMode;
   editMode?: boolean;
+  /** 勘定科目ごとの登録状況（accountItemId -> 登録済み） */
+  importStatus?: Record<string, boolean>;
   onUpdateRecord: (
     vehicleId: string,
     accountItemId: string,
@@ -75,6 +83,7 @@ function PLTableInner({
   yearMonth,
   displayMode,
   editMode = false,
+  importStatus = {},
   onUpdateRecord,
   onUpdateCourseRecord,
 }: PLTableProps) {
@@ -302,7 +311,7 @@ function PLTableInner({
     scrollRef.current?.scrollBy({ left: 300, behavior: "smooth" });
   };
 
-  const tableWidth = Math.max(800, 352 + 180 * columns.length + 180);
+  const tableWidth = Math.max(800, 392 + 180 * columns.length + 180);
 
   return (
     <div className="relative">
@@ -319,6 +328,7 @@ function PLTableInner({
           }}
         >
         <colgroup>
+          <col style={{ width: "40px" }} />
           <col style={{ width: "72px" }} />
           <col style={{ width: "80px" }} />
           <col style={{ width: "200px" }} />
@@ -330,17 +340,21 @@ function PLTableInner({
         </colgroup>
         <thead>
           <tr className="border-b border-excel-grid bg-muted">
-            <th className="sticky left-0 top-0 z-40 bg-muted py-2 px-2 text-left text-xs font-medium text-foreground w-[72px] border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+            <th className="sticky left-0 top-0 z-40 bg-muted py-2 px-1 text-center text-xs font-medium text-foreground w-[40px] border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+              {/* 登録 */}
+            </th>
+            <th className="sticky left-[40px] top-0 z-40 bg-muted py-2 px-2 text-left text-xs font-medium text-foreground w-[72px] border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
               区分
             </th>
-            <th className="sticky left-[72px] top-0 z-40 bg-muted py-2 px-3 text-left text-xs font-medium text-foreground w-[80px] border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+            <th className="sticky left-[112px] top-0 z-40 bg-muted py-2 px-3 text-left text-xs font-medium text-foreground w-[80px] border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
               Code
             </th>
-            <th className="sticky left-[152px] top-0 z-40 bg-muted py-2 px-3 text-left text-xs font-medium text-foreground w-[200px] min-w-[200px] border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+            <th className="sticky left-[192px] top-0 z-40 bg-muted py-2 px-3 text-left text-xs font-medium text-foreground w-[200px] min-w-[200px] border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
               勘定科目
             </th>
             {displayMode === "course"
               ? courseGroups.map((g) => {
+                  const vehicleCount = g.vehicleIds.length;
                   const vehicleLabels = g.vehicleIds
                     .map((vid) => {
                       const v = vehicleMap.get(vid);
@@ -358,18 +372,30 @@ function PLTableInner({
                     >
                       <div className="flex flex-col items-center gap-0.5">
                         <span>{g.name}</span>
-                        <span
-                          className="text-muted-foreground font-normal text-[10px] cursor-help"
-                          title={tooltipText}
-                        >
-                          {g.vehicleIds.length}台
-                        </span>
+                        {vehicleCount === 0 ? (
+                          <span className="text-muted-foreground font-normal text-[10px]">0台</span>
+                        ) : vehicleCount === 1 ? (
+                          <span className="text-muted-foreground font-normal text-[10px]">
+                            {vehicleLabels}
+                          </span>
+                        ) : (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="text-muted-foreground font-normal text-[10px] cursor-help">
+                                {vehicleCount}台
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="max-w-[280px]">
+                              {tooltipText}
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
                       </div>
                     </th>
                   );
                 })
               : vehicles.map((v) => {
-                  const { courseName, serviceLine } = formatVehicleDisplay(v);
+                  const { courseName, serviceLine, courseCount } = formatVehicleDisplay(v);
                   return (
                     <th
                       key={v.id}
@@ -377,8 +403,14 @@ function PLTableInner({
                       className="sticky top-0 z-30 bg-muted py-2 px-3 text-center text-xs font-medium text-foreground min-w-[180px] border-r border-excel-grid"
                     >
                       <div className="flex flex-col items-center gap-0.5">
-                        <span>{courseName}</span>
-                        <span className="text-muted-foreground font-normal text-[10px]">{serviceLine}</span>
+                        <span>{serviceLine}</span>
+                        {courseCount === 0 ? (
+                          <span className="text-muted-foreground font-normal text-[10px]">コースなし</span>
+                        ) : (
+                          <span className="text-muted-foreground font-normal text-[10px]">
+                            {courseName}
+                          </span>
+                        )}
                       </div>
                     </th>
                   );
@@ -388,9 +420,10 @@ function PLTableInner({
             </th>
           </tr>
           <tr className="border-b border-excel-grid bg-muted">
-            <th className="sticky left-0 top-[3.25rem] z-40 bg-muted py-1 px-2 border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]"></th>
-            <th className="sticky left-[72px] top-[3.25rem] z-40 bg-muted py-1 px-3 w-[80px] border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]"></th>
-            <th className="sticky left-[152px] top-[3.25rem] z-40 bg-muted py-1 px-3 border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]"></th>
+            <th className="sticky left-0 top-[3.25rem] z-40 bg-muted py-1 px-1 border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]"></th>
+            <th className="sticky left-[40px] top-[3.25rem] z-40 bg-muted py-1 px-2 border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]"></th>
+            <th className="sticky left-[112px] top-[3.25rem] z-40 bg-muted py-1 px-3 w-[80px] border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]"></th>
+            <th className="sticky left-[192px] top-[3.25rem] z-40 bg-muted py-1 px-3 border-r border-excel-grid shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]"></th>
             {displayMode === "course"
               ? courseGroups.flatMap((g) => [
                   <th
@@ -438,7 +471,27 @@ function PLTableInner({
                     : "bg-background hover:bg-muted/50"
                 }`}
               >
-                <td className={`sticky left-0 z-30 py-2 px-2 text-sm overflow-hidden w-[72px] border-r border-excel-grid ${stickyBg} shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]`}>
+                <td className={`sticky left-0 z-30 py-2 px-1 text-center w-[40px] border-r border-excel-grid ${stickyBg} shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]`}>
+                  {!subtotal && (item.category === "revenue" || item.category === "expense") && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex cursor-help">
+                          {importStatus[item.id] ? (
+                            <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-hidden />
+                          ) : (
+                            <Circle className="h-4 w-4 text-muted-foreground/60" aria-hidden />
+                          )}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="right">
+                        {importStatus[item.id]
+                          ? "登録済み（インポートまたは連携でデータあり）"
+                          : "未登録"}
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                </td>
+                <td className={`sticky left-[40px] z-30 py-2 px-2 text-sm overflow-hidden w-[72px] border-r border-excel-grid ${stickyBg} shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]`}>
                   <span
                     className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium whitespace-nowrap ${
                       item.category === REVENUE_CATEGORY
@@ -451,10 +504,10 @@ function PLTableInner({
                     {getCategoryLabel(item.category)}
                   </span>
                 </td>
-                <td className={`sticky left-[72px] z-30 py-2 px-3 text-sm text-muted-foreground overflow-hidden w-[80px] border-r border-excel-grid ${stickyBg} shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]`}>
+                <td className={`sticky left-[112px] z-30 py-2 px-3 text-sm text-muted-foreground overflow-hidden w-[80px] border-r border-excel-grid ${stickyBg} shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]`}>
                   <span className="block truncate">{subtotal ? "-" : item.code}</span>
                 </td>
-                <td className={`sticky left-[152px] z-30 py-2 px-3 text-sm w-[200px] min-w-[200px] overflow-hidden border-r border-excel-grid ${stickyBg} shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)] ${subtotal ? "font-semibold" : "font-medium"}`}>
+                <td className={`sticky left-[192px] z-30 py-2 px-3 text-sm w-[200px] min-w-[200px] overflow-hidden border-r border-excel-grid ${stickyBg} shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)] ${subtotal ? "font-semibold" : "font-medium"}`}>
                   <span className="block truncate" title={item.name}>{item.name}</span>
                 </td>
                 {displayMode === "course"

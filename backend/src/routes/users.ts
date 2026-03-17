@@ -75,10 +75,11 @@ usersRouter.get("/:idOrExternalId", async (req: Request, res: Response) => {
   }
 });
 
-// 作成・更新（外部同期用 upsert: externalId で検索し、あれば更新、なければ作成）
+// 作成・更新（外部同期用 upsert: userId/externalId で検索し、あれば更新、なければ作成）
 usersRouter.post("/", async (req: Request, res: Response) => {
   try {
-    const { email, name, role, externalId, password } = req.body;
+    const { email, name, role, externalId, userId, password } = req.body;
+    const extId = externalId ?? userId;
 
     if (!email || !name || !role) {
       res.status(400).json({
@@ -102,14 +103,14 @@ usersRouter.post("/", async (req: Request, res: Response) => {
       email: String(email).trim(),
       name: String(name).trim(),
       role: String(role),
-      externalId: externalId ? String(externalId).trim() : null,
+      externalId: extId ? String(extId).trim() : null,
       passwordHash,
     };
 
     let user;
-    if (externalId) {
+    if (extId) {
       const existing = await prisma.user.findFirst({
-        where: { externalId: String(externalId) },
+        where: { externalId: String(extId) },
       });
       if (existing) {
         user = await prisma.user.update({
@@ -200,7 +201,8 @@ usersRouter.post("/sync", async (req: Request, res: Response) => {
     const results: { email: string; status: "created" | "updated"; id: string }[] = [];
 
     for (const u of users) {
-      const { email, name, role, externalId, password } = u;
+      const { email, name, role, externalId, userId, password } = u;
+      const extId = externalId ?? userId;
       if (!email || !name || !role) continue;
       if (!VALID_ROLES.includes(role)) continue;
 
@@ -212,12 +214,12 @@ usersRouter.post("/sync", async (req: Request, res: Response) => {
         email: String(email).trim(),
         name: String(name).trim(),
         role: String(role),
-        externalId: externalId ? String(externalId).trim() : null,
+        externalId: extId ? String(extId).trim() : null,
         passwordHash,
       };
 
-      const existing = externalId
-        ? await prisma.user.findFirst({ where: { externalId: String(externalId) } })
+      const existing = extId
+        ? await prisma.user.findFirst({ where: { externalId: String(extId) } })
         : await prisma.user.findUnique({ where: { email: data.email } });
 
       if (existing) {

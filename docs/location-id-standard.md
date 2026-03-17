@@ -1,12 +1,14 @@
-# 拠点 ID の共通化ルール
+# 拠点 ID の共通化ルール（非推奨）
+
+> **注意**: 本ドキュメントは後方互換のため残しています。新規は [department-id-standard.md](department-id-standard.md)（部門 ID）を参照してください。
 
 他システム（人事、経理など）との連携計画に合わせ、拠点識別子の運用ルールを定義します。
 
 ---
 
-## 1. 標準識別子: Location.code
+## 1. 標準識別子: Location.code（→ department id）
 
-**拠点の共通識別子として `Location.code` を使用します。**
+**拠点の共通識別子として `Location.code` を使用します。** 仕様書では「部門（Department）」として **department id** に統一しています。
 
 | 項目 | 内容 |
 |------|------|

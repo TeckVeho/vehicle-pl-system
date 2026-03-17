@@ -22,7 +22,8 @@ function formatVehicleDisplay(v: Vehicle) {
 
 interface DailySummaryTableProps {
   vehicles: Vehicle[];
-  dailyAmountByVehicle: Record<string, number>;
+  /** 車両ID -> 日(1-31) -> その日の売上 */
+  dailyAmountByVehicleByDay: Record<string, Record<number, number>>;
   monthlyTotalByVehicle: Record<string, number>;
   daysInMonth: number;
   yearMonth: string;
@@ -30,7 +31,7 @@ interface DailySummaryTableProps {
 
 export function DailySummaryTable({
   vehicles,
-  dailyAmountByVehicle,
+  dailyAmountByVehicleByDay,
   monthlyTotalByVehicle,
   daysInMonth,
   yearMonth,
@@ -109,13 +110,16 @@ export function DailySummaryTable({
                     key={v.id}
                     className="py-2 px-3 text-right text-muted-foreground border-r border-excel-grid"
                   >
-                    {formatCurrency(dailyAmountByVehicle[v.id] ?? 0)}
+                    {formatCurrency(
+                      dailyAmountByVehicleByDay[v.id]?.[day] ?? 0
+                    )}
                   </td>
                 ))}
                 <td className="py-2 px-3 text-right font-medium border-l border-excel-grid">
                   {formatCurrency(
                     vehicles.reduce(
-                      (sum, v) => sum + (dailyAmountByVehicle[v.id] ?? 0),
+                      (sum, v) =>
+                        sum + (dailyAmountByVehicleByDay[v.id]?.[day] ?? 0),
                       0
                     )
                   )}
