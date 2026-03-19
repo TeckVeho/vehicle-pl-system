@@ -11,6 +11,8 @@ import { incomeStatementRouter } from "./income-statement.js";
 import { accountItemsRouter } from "./account-items.js";
 import { vehiclesRouter } from "./vehicles.js";
 import { vehicleMonthlyCostsRouter } from "./vehicle-monthly-costs.js";
+import { locationMonthlyExpensesRouter } from "./location-monthly-expenses.js";
+import { locationCalculationParametersRouter } from "./location-calculation-parameters.js";
 import { arbitraryInsuranceRouter } from "./arbitrary-insurance.js";
 import { locationsRouter } from "./locations.js";
 import { importRouter } from "./import.js";
@@ -39,6 +41,8 @@ apiRouter.use("/income-statement", incomeStatementRouter);
 apiRouter.use("/account-items", accountItemsRouter); // 権限チェックは account-items 内で実施
 apiRouter.use("/vehicles", vehiclesRouter);
 apiRouter.use("/vehicle-monthly-costs", vehicleMonthlyCostsRouter);
+apiRouter.use("/location-monthly-expenses", locationMonthlyExpensesRouter);
+apiRouter.use("/location-calculation-parameters", locationCalculationParametersRouter);
 apiRouter.use("/arbitrary-insurance", arbitraryInsuranceRouter);
 apiRouter.use("/locations", locationsRouter);
 apiRouter.use("/import", requireRole(ROLES.EDIT_PL), importRouter);

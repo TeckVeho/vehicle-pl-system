@@ -21,6 +21,8 @@
 └──────┬──────┘       └──────┬──────┘
        │                     │
        │ 1:N                 │ 1:N
+       ├── LocationMonthlyExpense（拠点別月額経費）
+       ├── LocationCalculationParameter（燃料単価・道路割引率）
        ▼                     ▼
 ┌─────────────┐       ┌─────────────────────────────────┐
 │   Driver    │       │           Vehicle              │
@@ -43,10 +45,12 @@
        │                     │
        │                     │ N:1
        │                     ▼
-       │              ┌─────────────┐
-       └──────────────│ AccountItem │
-         DriverMonthlyAmount  │ (勘定科目)  │
-         (ドライバー別月次)   └─────────────┘
+       │              ┌─────────────────┐
+       └──────────────│   AccountItem   │
+                      │   (勘定科目)    │
+                      └────────┬────────┘
+                               │ 1:N（LocationMonthlyExpense と紐づく）
+         DriverMonthlyAmount（ドライバー別月次）も同じ AccountItem を参照
 
 ┌─────────────┐
 │ DataSyncLog │  （連携記録・独立）
@@ -82,7 +86,7 @@
 
 ### 2. Location（拠点）
 
-15拠点を想定した拠点マスタ。
+拠点（部門）マスタ。シード例では LOC001 〜 など複数件を投入。
 
 | カラム | 型 | NULL | 説明 |
 |--------|-----|------|------|
@@ -92,7 +96,7 @@
 | createdAt | DateTime | - | 作成日時 |
 | updatedAt | DateTime | - | 更新日時 |
 
-**リレーション**: Vehicle (1:N), Course (1:N), Driver (1:N)
+**リレーション**: Vehicle (1:N), Course (1:N), Driver (1:N), LocationMonthlyExpense (1:N), LocationCalculationParameter (1:N)
 
 ---
 
@@ -201,7 +205,11 @@
 
 ### 8. AccountItem（勘定科目）
 
-損益計算書の勘定科目マスタ。
+損益計算書の勘定科目マスタ。各科目の取得方法は [account-item-calculation-spec.md](account-item-calculation-spec.md) を参照。
+
+**売上科目のデータソース**:
+- 山崎製パン〜関東運輸: 各拠点スプレッドシート参照のみ
+- その他・不動産収入・人材派遣収入: 手入力のみ（MonthlyRecord）
 
 | カラム | 型 | NULL | 説明 |
 |--------|-----|------|------|
@@ -212,7 +220,8 @@
 | sortOrder | Int | - | 表示順 |
 | isSubtotal | Boolean | - | 小計行フラグ（デフォルト: false） |
 | isVehicleRelated | Boolean | - | VPL版で表示する車両関連科目フラグ（デフォルト: false） |
-| isDriverRelated | Boolean | - | ドライバー配賦対象科目（乗務員給料等、デフォルト: false） |
+| isDriverRelated | Boolean | - | ドライバー配賦対象科目（乗務員給料・通勤手当等。乗務員給料・通勤手当は表示時に乗車回数で按分、デフォルト: false） |
+| revenuePricingType | String | ○ | 売上単価体系: `per_run`（回数単価） / `monthly`（月額単価） / null（均等割り）。日次サマリーの売上按分に使用 |
 | linkageMethod | String | ○ | 連携方法（データ連携の見える化用） |
 | effectiveFrom | String | ○ | 適用開始年月（YYYY-MM） |
 | effectiveTo | String | ○ | 適用終了年月（YYYY-MM） |
@@ -220,7 +229,8 @@
 | updatedAt | DateTime | - | 更新日時 |
 
 **ユニーク制約**: `(code, name)`  
-**インデックス**: `category`, `isVehicleRelated`, `isDriverRelated`
+**インデックス**: `category`, `isVehicleRelated`, `isDriverRelated`  
+**リレーション**: MonthlyRecord (1:N), MonthlyRecordHistory (1:N), DriverMonthlyAmount (1:N), LocationMonthlyExpense (1:N)
 
 **category の値**:  
 `revenue` | `expense` | `subtotal_revenue` | `subtotal_expense` | `subtotal_gross` | `summary`
@@ -248,9 +258,33 @@
 
 ---
 
-### 10. VehicleMonthlyCost（車両月次費用）
+### 10. LocationMonthlyExpense（拠点別月額経費）
 
-車両×年月ごとの固定費用。イズミクラウドから連携し、損益計算書の以下の勘定科目で参照。
+拠点×勘定科目×年月ごとの月額合計。PCA からイズミクラウド経由で連携し、車両数で按分して MonthlyRecord に反映。
+
+| 勘定科目例 | 科目コード |
+|------------|------------|
+| 旅費交通費・消耗品・修繕費等 | 6150〜6189（20科目） |
+
+| カラム | 型 | NULL | 説明 |
+|--------|-----|------|------|
+| id | String | - | 主キー（cuid） |
+| locationId | String | - | 拠点ID（FK → Location） |
+| accountItemId | String | - | 勘定科目ID（FK → AccountItem） |
+| yearMonth | String | - | 年月（YYYY-MM） |
+| amount | Float | - | 拠点の月額合計（車両数で按分前） |
+| createdAt | DateTime | - | 作成日時 |
+| updatedAt | DateTime | - | 更新日時 |
+
+**ユニーク制約**: `(locationId, accountItemId, yearMonth)`
+**インデックス**: `yearMonth`, `locationId`
+**削除時**: Location 削除で Cascade
+
+---
+
+### 11. VehicleMonthlyCost（車両月次費用）
+
+車両×年月ごとの固定費用。イズミクラウド/ITPから連携し、損益計算書の以下の勘定科目で参照。
 
 | 勘定科目 | カラム |
 |----------|--------|
@@ -259,6 +293,8 @@
 | 車両リース（6193） | vehicleLease |
 | 損害保険料（6194） | insuranceCost |
 | 賦課税（6195） | taxCost |
+| 燃料費（6175） | fuelEfficiency × 燃料単価（計算） |
+| 道路使用料（6176） | roadUsageFee × 使用料割引率（計算） |
 
 | カラム | 型 | NULL | 説明 |
 |--------|-----|------|------|
@@ -270,6 +306,8 @@
 | vehicleLease | Float | - | 車両リース（デフォルト: 0） |
 | insuranceCost | Float | - | 損害保険料（デフォルト: 0） |
 | taxCost | Float | - | 賦課税（デフォルト: 0） |
+| fuelEfficiency | Float | - | 燃費（L、ITP連携。燃料費 = 燃費 × 燃料単価） |
+| roadUsageFee | Float | - | 道路使用料（ITP連携の生データ） |
 | createdAt | DateTime | - | 作成日時 |
 | updatedAt | DateTime | - | 更新日時 |
 
@@ -279,7 +317,27 @@
 
 ---
 
-### 11. ArbitraryInsuranceMaster（任意保険マスタ）
+### 12. LocationCalculationParameter（拠点別計算パラメータ）
+
+拠点×年月ごとの燃料単価・道路使用料割引率。燃料費・道路使用料の算出に使用。
+
+| カラム | 型 | NULL | 説明 |
+|--------|-----|------|------|
+| id | String | - | 主キー（cuid） |
+| locationId | String | - | 拠点ID（FK → Location） |
+| yearMonth | String | - | 年月（YYYY-MM） |
+| fuelUnitPrice | Float | - | 燃料単価（円/L、デフォルト: 0） |
+| roadUsageDiscountRate | Float | - | 使用料割引率（0〜1、デフォルト: 1） |
+| createdAt | DateTime | - | 作成日時 |
+| updatedAt | DateTime | - | 更新日時 |
+
+**ユニーク制約**: `(locationId, yearMonth)`  
+**インデックス**: `yearMonth`, `locationId`  
+**削除時**: Location 削除で Cascade
+
+---
+
+### 13. ArbitraryInsuranceMaster（任意保険マスタ）
 
 トン数別の月額保険料。損害保険料(任意保険)の計算に使用。編集のみ（新規追加・削除は不可）。
 
@@ -296,7 +354,7 @@
 
 ---
 
-### 12. MonthlyRecord（月次損益データ）
+### 14. MonthlyRecord（月次損益データ）
 
 車両×勘定科目×年月ごとの金額を保持。損益計算の本体。
 
@@ -316,7 +374,7 @@
 
 ---
 
-### 13. MonthlyRecordHistory（月次データ変更履歴）
+### 15. MonthlyRecordHistory（月次データ変更履歴）
 
 MonthlyRecord の変更履歴を記録。
 
@@ -328,14 +386,15 @@ MonthlyRecord の変更履歴を記録。
 | yearMonth | String | - | 年月 |
 | oldAmount | Float | - | 変更前金額 |
 | newAmount | Float | - | 変更後金額 |
+| createdById | String | ○ | 変更実行者（FK → User、画面編集時など） |
 | createdAt | DateTime | - | 記録日時 |
 
 **インデックス**: `yearMonth`, `vehicleId`, `accountItemId`  
-**削除時**: Vehicle / AccountItem 削除で Cascade
+**削除時**: Vehicle / AccountItem 削除で Cascade / User 削除で SetNull
 
 ---
 
-### 14. DataSyncLog（連携記録）
+### 16. DataSyncLog（連携記録）
 
 外部システムからのデータ連携の成功記録（件数のみ）。
 

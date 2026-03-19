@@ -27,7 +27,7 @@
 | 機能 | 状態 | 備考 |
 |------|------|------|
 | 拠点・年月フィルター | 完了 | タブ＋セレクト |
-| 損益表表示 | 完了 | 勘定科目別・車両別 |
+| 損益表表示 | 完了 | 勘定科目別・車両別。VehicleMonthlyCost・LocationMonthlyExpense を優先する科目あり（償却系・拠点按分経費・燃料費・道路使用料など） |
 | セル編集 | 完了 | インライン編集、自動保存 |
 | インポート | 完了 | /import ページから CSV/Excel アップロード |
 | 変更履歴 | 完了 | 履歴ダイアログで確認 |
@@ -40,6 +40,8 @@
 |------|------|------|
 | 年月・拠点フィルター | 完了 | |
 | 車両別日次集計表示 | 完了 | |
+| 売上の日次按分 | 完了 | 山崎製パン〜関東運輸は `AccountItem.revenuePricingType`（per_run / monthly / 均等）に応じて DailyOperatingRecord で按分 |
+| 経費・ドライバー科目の日次配賦 | 完了 | 乗務員給料・通勤手当は乗車回数ベース、その他経費は月次÷日数など（[account-item-calculation-spec.md](account-item-calculation-spec.md) 参照） |
 
 ### 連携記録
 
@@ -60,7 +62,7 @@
 
 | 機能 | 状態 | 備考 |
 |------|------|------|
-| 勘定科目マスタ | 完了 | 閲覧・編集（DX/DX管理者）、車両関連・ドライバー配賦フラグ対応 |
+| 勘定科目マスタ | 完了 | 閲覧・編集（DX/DX管理者）、車両関連・ドライバー配賦フラグ対応、各科目の計算ロジック表示。乗務員給料・通勤手当は乗車回数ベースで按分 |
 | コースマスタ | 完了 | CRUD、新規作成時に車両も自動作成 |
 | コース・車両マッピング | 完了 | 閲覧のみ、拠点フィルター |
 | ユーザー管理 | 完了 | /users、DX管理者のみ、CRUD・一括同期 |
@@ -72,7 +74,8 @@
 | ユーザー CRUD | 完了 | externalId 対応 |
 | ユーザー一括同期 | 完了 | POST /api/users/sync |
 | ドライバー・乗務記録連携 | 完了 | Driver マスタ、日次乗務記録、ドライバー別月次金額の sync API |
-| その他 API | 完了 | dashboard, daily-summary, daily-operating, income-statement, account-items, vehicles, locations, courses, import, sync-logs |
+| 車両月次費用・拠点経費・計算パラメータ | 完了 | vehicle-monthly-costs（sync）、location-monthly-expenses（sync）、location-calculation-parameters（GET/PUT）、arbitrary-insurance（GET/PATCH） |
+| その他 API | 完了 | dashboard, daily-summary, daily-operating, income-statement, account-items, vehicles, vehicle-monthly-costs, location-monthly-expenses, location-calculation-parameters, arbitrary-insurance, locations, courses, import, sync-logs |
 
 ---
 
@@ -117,6 +120,9 @@
 | **ドライバー別月次金額** | タイムシート | 対応済み | POST /api/driver-monthly-amounts/sync |
 | **部門（Department）** | 連携不要 | 本システム内管理 | [department-id-standard.md](department-id-standard.md) で運用ルール確定 |
 | **日次稼働・走行データ** | タイムシート | 対応済み | POST /api/daily-operating/sync（回数/稼働日フラグ） |
+| **車両月次費用** | イズミクラウド（ITP含む） | 対応済み | POST /api/vehicle-monthly-costs/sync |
+| **拠点別月額経費** | PCA（イズミクラウド経由） | 対応済み | POST /api/location-monthly-expenses/sync |
+| **拠点別計算パラメータ** | 本システム（手入力/API） | 対応済み | PUT /api/location-calculation-parameters（燃料単価・道路割引率） |
 
 ---
 
@@ -127,3 +133,5 @@
 3. ~~**権限制御**~~: 完了
 4. ~~**ユーザー管理画面**~~: 完了（/users）
 5. **コースマスタのヘッダーナビ追加**: 未着手（/courses をヘッダーに掲載）
+
+詳細な実行タスクは [engineering-backlog.md](engineering-backlog.md) を参照。

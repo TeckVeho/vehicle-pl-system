@@ -26,12 +26,12 @@ const ACCOUNT_ITEMS = [
   { code: "5010", name: "人材派遣収入", category: "revenue", sortOrder: 14 },
   { code: "SUBTOTAL_REV", name: "純売上高", category: "subtotal_revenue", sortOrder: 15, isSubtotal: true },
   { code: "6138", name: "乗務員給料", category: "expense", sortOrder: 16, isDriverRelated: true },
-  { code: "6139", name: "業務給料", category: "expense", sortOrder: 17, isDriverRelated: true },
+  { code: "6139", name: "業務給料", category: "expense", sortOrder: 17, isDriverRelated: false }, // 手動インポート
   { code: "6141", name: "人材派遣費", category: "expense", sortOrder: 18 },
   { code: "6145", name: "賞与", category: "expense", sortOrder: 19 },
   { code: "6147", name: "通勤手当", category: "expense", sortOrder: 20, isDriverRelated: true },
   { code: "6148", name: "法定福利費", category: "expense", sortOrder: 21, isDriverRelated: true },
-  { code: "6149", name: "福利厚生費", category: "expense", sortOrder: 22, isDriverRelated: true },
+  { code: "6149", name: "福利厚生費", category: "expense", sortOrder: 22, isDriverRelated: false }, // 手動インポート
   { code: "6150", name: "旅費交通地", category: "expense", sortOrder: 23 },
   { code: "6151", name: "消耗品", category: "expense", sortOrder: 24 },
   { code: "6154", name: "修繕費", category: "expense", sortOrder: 25 },
@@ -69,29 +69,30 @@ const ACCOUNT_ITEMS = [
   { code: "SUMMARY_GROSS", name: "粗　　利　　益", category: "summary", sortOrder: 57, isSubtotal: true },
 ];
 
+// id → (code, name)。code は LOC + 3桁の id。イズミクラウド等との連携で id を共有する想定
 const LOCATIONS = [
-  { code: "LOC001", name: "横浜第1" },
-  { code: "LOC002", name: "横浜第2" },
-  { code: "LOC003", name: "横浜第3" },
-  { code: "LOC004", name: "平塚" },
+  { code: "LOC001", name: "本社" },
+  { code: "LOC002", name: "横浜第1" },
+  { code: "LOC003", name: "平塚" },
+  { code: "LOC004", name: "横浜第2" },
   { code: "LOC005", name: "静岡" },
-  { code: "LOC006", name: "武蔵野" },
-  { code: "LOC007", name: "所沢" },
-  { code: "LOC008", name: "古河" },
-  { code: "LOC009", name: "千葉" },
-  { code: "LOC010", name: "八千代" },
-  { code: "LOC011", name: "東京" },
-  { code: "LOC012", name: "新潟" },
-  { code: "LOC013", name: "名古屋" },
-  { code: "LOC014", name: "浜松" },
-  { code: "LOC015", name: "安城" },
-  { code: "LOC016", name: "富山" },
-  { code: "LOC017", name: "大阪" },
-  { code: "LOC018", name: "神戸" },
-  { code: "LOC019", name: "本社" },
-  { code: "LOC020", name: "管理本部" },
-  { code: "LOC021", name: "不動産管理" },
-  { code: "LOC022", name: "米沢" },
+  { code: "LOC006", name: "千葉" },
+  { code: "LOC007", name: "東京" },
+  { code: "LOC008", name: "八千代" },
+  { code: "LOC009", name: "古河" },
+  { code: "LOC011", name: "武蔵野" },
+  { code: "LOC013", name: "所沢" },
+  { code: "LOC014", name: "新潟" },
+  { code: "LOC015", name: "名古屋" },
+  { code: "LOC016", name: "安城" },
+  { code: "LOC017", name: "浜松" },
+  { code: "LOC018", name: "富山" },
+  { code: "LOC019", name: "大阪" },
+  { code: "LOC020", name: "神戸" },
+  { code: "LOC022", name: "横浜第3" },
+  { code: "LOC023", name: "不動産管理" },
+  { code: "LOC024", name: "米沢" },
+  { code: "LOC025", name: "管理本部" },
 ];
 
 async function main() {
@@ -131,7 +132,7 @@ async function main() {
   for (const loc of LOCATIONS) {
     await prisma.location.upsert({
       where: { code: loc.code },
-      update: {},
+      update: { name: loc.name },
       create: loc,
     });
   }
@@ -189,6 +190,28 @@ async function main() {
           locationId: loc.id,
           vehicleNo,
           courseId: course.id,
+        },
+      });
+    }
+  }
+
+  // 拠点別計算パラメータ（燃料費・道路使用料の算出用。デフォルト値）
+  const now = new Date();
+  const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevYm = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, "0")}`;
+  for (const loc of locations) {
+    for (const ym of [currentYm, prevYm]) {
+      await prisma.locationCalculationParameter.upsert({
+        where: {
+          locationId_yearMonth: { locationId: loc.id, yearMonth: ym },
+        },
+        update: {},
+        create: {
+          locationId: loc.id,
+          yearMonth: ym,
+          fuelUnitPrice: 150,
+          roadUsageDiscountRate: 0.95,
         },
       });
     }

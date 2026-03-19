@@ -13,6 +13,7 @@ import {
   Link2,
   ChevronDown,
   Shield,
+  Settings2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fetchApi } from "@/lib/api";
@@ -43,6 +44,7 @@ const dataSubMenu = [
 const masterSubMenu = [
   { href: "/account-items", label: "勘定科目マスタ", icon: BookOpen, roles: "MASTER" as const },
   { href: "/arbitrary-insurance", label: "任意保険マスタ", icon: Shield, roles: "MASTER" as const },
+  { href: "/location-calculation-parameters", label: "拠点別計算パラメータ", icon: Settings2, roles: "MASTER" as const },
   { href: "/course-vehicle-mapping", label: "コース・車両マッピング", icon: MapPin, roles: null },
 ];
 
@@ -74,7 +76,7 @@ export function Header() {
   const visibleMasterSubMenu = masterSubMenu.filter(isItemVisible);
 
   const isDataActive = pathname.startsWith("/import") || pathname.startsWith("/sync-logs");
-  const isMasterActive = pathname.startsWith("/account-items") || pathname.startsWith("/arbitrary-insurance") || pathname.startsWith("/course-vehicle-mapping");
+  const isMasterActive = pathname.startsWith("/account-items") || pathname.startsWith("/arbitrary-insurance") || pathname.startsWith("/location-calculation-parameters") || pathname.startsWith("/course-vehicle-mapping");
   const isPLActive = pathname.startsWith("/income-statement");
 
   const navLinkClass = (isActive: boolean) =>

@@ -586,7 +586,9 @@ function PLTableInner({
                     })}
                 <td className={`py-2 px-3 text-right border-l border-excel-grid ${subtotal ? "bg-muted" : "bg-background"}`}>
                   {(() => {
-                    const { total, totalNetRevenue } = totalByItemMap.get(item.id)!;
+                    const rowTotal = totalByItemMap.get(item.id);
+                    if (!rowTotal) return <span className="text-muted-foreground">-</span>;
+                    const { total, totalNetRevenue } = rowTotal;
                     const totalRatio = calcSalesRatio(total, totalNetRevenue);
                     return (
                       <>

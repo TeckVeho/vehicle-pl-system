@@ -32,6 +32,8 @@ vehicleMonthlyCostsRouter.post(
           vehicleLease?: number;
           insuranceCost?: number;
           taxCost?: number;
+          fuelEfficiency?: number;  // 燃費（L、ITP連携）
+          roadUsageFee?: number;   // 道路使用料（ITP連携の生データ）
         }>;
       };
 
@@ -98,6 +100,8 @@ vehicleMonthlyCostsRouter.post(
           vehicleLease: Number(c.vehicleLease ?? 0),
           insuranceCost: Number(c.insuranceCost ?? 0),
           taxCost: Number(c.taxCost ?? 0),
+          fuelEfficiency: Number(c.fuelEfficiency ?? 0),
+          roadUsageFee: Number(c.roadUsageFee ?? 0),
         };
 
         const existing = await prisma.vehicleMonthlyCost.findUnique({

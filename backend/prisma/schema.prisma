@@ -26,14 +26,16 @@ model User {
 }
 
 model Location {
-  id        String   @id @default(cuid())
-  code      String   @unique
-  name      String
-  vehicles  Vehicle[]
-  courses   Course[]
-  drivers   Driver[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                          String   @id @default(cuid())
+  code                        String   @unique
+  name                        String
+  vehicles                    Vehicle[]
+  courses                     Course[]
+  drivers                     Driver[]
+  monthlyExpenses             LocationMonthlyExpense[]
+  calculationParameters       LocationCalculationParameter[]
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
 }
 
 model Course {
@@ -77,7 +79,24 @@ model Vehicle {
   @@index([externalId])
 }
 
-// 車両月次費用（イズミクラウド連携: リース車償却・車両償却費・車両リース・損害保険料・賦課税）
+// 拠点別月額経費（別システム連携: 旅費交通費・消耗品・修繕費等を拠点ごとに連携し、車両数で按分）
+model LocationMonthlyExpense {
+  id            String      @id @default(cuid())
+  locationId    String
+  location      Location    @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  accountItemId String
+  accountItem   AccountItem @relation(fields: [accountItemId], references: [id], onDelete: Cascade)
+  yearMonth     String      // "YYYY-MM"
+  amount        Float       @default(0)  // 拠点の月額合計（車両数で按分前）
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([locationId, accountItemId, yearMonth])
+  @@index([yearMonth])
+  @@index([locationId])
+}
+
+// 車両月次費用（イズミクラウド/ITP連携: リース車償却・車両償却費・車両リース・損害保険料・賦課税・燃費・道路使用料）
 model VehicleMonthlyCost {
   id                    String   @id @default(cuid())
   vehicleId             String
@@ -88,12 +107,30 @@ model VehicleMonthlyCost {
   vehicleLease          Float    @default(0)  // 6193 車両リース
   insuranceCost         Float    @default(0)  // 6194 損害保険料(自賠責)
   taxCost               Float    @default(0)  // 6195 賦課税(自動車税)
+  fuelEfficiency        Float    @default(0)  // 燃費（L、ITP連携。燃料費 = 燃費 × 燃料単価）
+  roadUsageFee          Float    @default(0)  // 道路使用料（ITP連携の生データ。道路使用料 = 道路使用料 × 使用料割引率）
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
   @@unique([vehicleId, yearMonth])
   @@index([yearMonth])
   @@index([vehicleId])
+}
+
+// 拠点別計算パラメータ（燃料単価・道路使用料割引率。燃料費・道路使用料の算出に使用）
+model LocationCalculationParameter {
+  id                    String   @id @default(cuid())
+  locationId            String
+  location              Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  yearMonth             String   // "YYYY-MM"
+  fuelUnitPrice         Float    @default(0)   // 燃料単価（円/L）
+  roadUsageDiscountRate Float    @default(1)   // 使用料割引率（0〜1、例: 0.95 = 5%割引）
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([locationId, yearMonth])
+  @@index([yearMonth])
+  @@index([locationId])
 }
 
 model Driver {
@@ -163,6 +200,7 @@ model AccountItem {
   monthlyRecords      MonthlyRecord[]
   recordHistories     MonthlyRecordHistory[]
   driverMonthlyAmounts DriverMonthlyAmount[]
+  locationMonthlyExpenses LocationMonthlyExpense[]
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
 

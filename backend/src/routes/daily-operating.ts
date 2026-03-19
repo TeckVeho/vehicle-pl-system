@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
+import { runSalaryRunCountAllocation } from "../lib/salary-run-count-allocation.js";
 
 export const dailyOperatingRouter = Router();
 
@@ -114,6 +115,9 @@ dailyOperatingRouter.post("/sync", async (req: Request, res: Response) => {
       upserted++;
     }
 
+    // 乗務員給料・通勤手当の乗車回数ベース配賦を再計算
+    const salaryAllocationResult = await runSalaryRunCountAllocation(yearMonthStr, locId);
+
     // 連携ログ記録
     await prisma.dataSyncLog.create({
       data: {
@@ -128,6 +132,7 @@ dailyOperatingRouter.post("/sync", async (req: Request, res: Response) => {
     res.status(200).json({
       success: true,
       upserted,
+      salaryAllocation: salaryAllocationResult,
       ...(errors.length > 0 && { errors }),
     });
   } catch (e) {

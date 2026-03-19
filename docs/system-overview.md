@@ -137,6 +137,34 @@ erDiagram
         string code
         string name
         string category
+        string revenuePricingType "per_run monthly null"
+    }
+
+    Location ||--o{ LocationMonthlyExpense : "1:N"
+    Location ||--o{ LocationCalculationParameter : "1:N"
+    AccountItem ||--o{ LocationMonthlyExpense : "1:N"
+    Vehicle ||--o{ VehicleMonthlyCost : "1:N"
+
+    LocationMonthlyExpense {
+        string id PK
+        string locationId FK
+        string accountItemId FK
+        string yearMonth
+        float amount
+    }
+
+    LocationCalculationParameter {
+        string id PK
+        string locationId FK
+        string yearMonth
+        float fuelUnitPrice
+        float roadUsageDiscountRate
+    }
+
+    VehicleMonthlyCost {
+        string id PK
+        string vehicleId FK
+        string yearMonth
     }
 ```
 
@@ -153,7 +181,10 @@ erDiagram
 | **ドライバー** | イズミクラウド | 対応済み | `POST /api/drivers/sync`。ATMTC の紐づきを経由 |
 | **日次乗務記録** | タイムシート | 対応済み | `POST /api/driver-assignments/sync`、連携後に配賦計算を実行 |
 | **ドライバー別月次金額** | タイムシート | 対応済み | `POST /api/driver-monthly-amounts/sync` |
-| **日次稼働・走行データ** | タイムシート | 対応済み | `POST /api/daily-operating/sync`（回数/稼働日フラグ） |
+| **日次稼働・走行データ** | タイムシート | 対応済み | `POST /api/daily-operating/sync`（回数/稼働日フラグ。売上日次按分・ドライバー配賦の再計算トリガー） |
+| **車両月次費用** | イズミクラウド（ITP含む） | 対応済み | `POST /api/vehicle-monthly-costs/sync`（償却・リース・保険・税＋燃費・道路使用料の生データ） |
+| **拠点別月額経費** | PCA（イズミクラウド経由） | 対応済み | `POST /api/location-monthly-expenses/sync`（旅費交通費等・車両数按分） |
+| **拠点別計算パラメータ** | 本システム | 対応済み | `PUT /api/location-calculation-parameters`（燃料単価・道路使用料割引率、MASTER 権限） |
 | **部門（Department）** | 連携不要 | 本システム内管理 | [department-id-standard.md](department-id-standard.md) 参照 |
 
 ### 部門IDの整合性
@@ -182,9 +213,17 @@ erDiagram
 | `/api/locations` | 拠点一覧 |
 | `/api/courses` | コース CRUD |
 | `/api/import` | データインポート（CSV/Excel） |
+| `/api/vehicle-monthly-costs` | POST /sync のみ。車両月次費用の一括 upsert（イズミクラウド/ITP 連携、MASTER）。参照は損益計算書 API が集約 |
+| `/api/location-monthly-expenses` | POST /sync のみ。拠点別月額経費の一括 upsert（車両数按分後に MonthlyRecord 更新、MASTER） |
+| `/api/location-calculation-parameters` | 拠点別燃料単価・道路使用料割引率の一覧・登録（PUT は MASTER） |
+| `/api/arbitrary-insurance` | 任意保険マスタ（トン数別月額）の一覧取得・金額一括更新（PATCH は MASTER） |
 | `/api/sync-logs` | 連携記録の取得・登録 |
 
+- データベース定義は [db-schema.md](db-schema.md) を参照
+- 部門 ID の運用は [department-id-standard.md](department-id-standard.md) を参照（旧 [location-id-standard.md](location-id-standard.md) は非推奨）
+- 残タスクの一覧は [engineering-backlog.md](engineering-backlog.md) を参照
 - 車両損益計算書の外部連携の技術仕様は [external-integration-spec.md](external-integration-spec.md) を参照
+- 勘定科目ごとの取得・計算ロジックは [account-item-calculation-spec.md](account-item-calculation-spec.md) を参照
 - ドライバー配賦 API の詳細は [driver-allocation-api.md](driver-allocation-api.md) を参照
 
 ---

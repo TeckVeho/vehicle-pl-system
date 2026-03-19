@@ -70,6 +70,10 @@ export default function DashboardPage() {
       try {
         const res = await fetchApi(`/api/dashboard/summary?yearMonth=${yearMonth}`);
         const json = await res.json();
+        if (!res.ok || !json.summary) {
+          setData(null);
+          return;
+        }
         setData(json);
       } catch {
         setData(null);
@@ -84,6 +88,34 @@ export default function DashboardPage() {
 
   if (loading && !data) {
     return <LoadingOverlay message="読み込み中" />;
+  }
+
+  if (!data?.summary) {
+    return (
+      <div className="pb-12">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-3xl font-bold tracking-tight">ダッシュボード</h1>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-sm text-muted-foreground whitespace-nowrap">年月</span>
+            <Select value={yearMonth} onValueChange={setYearMonth}>
+              <SelectTrigger className="w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {yearMonths.map((ym) => (
+                  <SelectItem key={ym} value={ym}>
+                    {ym.replace("-", "年")}月
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <p className="text-muted-foreground">
+          データの取得に失敗しました。年月を変更するか、しばらくしてから再試行してください。
+        </p>
+      </div>
+    );
   }
 
   return (

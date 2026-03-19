@@ -21,8 +21,9 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Plus, Pencil, Trash2, BookOpen, ChevronDown, FileText } from "lucide-react";
+import { Plus, Pencil, Trash2, BookOpen, ChevronDown, FileText, Calculator } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getCalculationLogic } from "@/lib/account-item-calculation";
 
 interface AccountItem {
   id: string;
@@ -370,7 +371,9 @@ export default function AccountItemsPage() {
               </div>
               {/* 勘定科目一覧 */}
               <div className="divide-y divide-border/40">
-                {catItems.map((item) => (
+                {catItems.map((item) => {
+                  const logic = getCalculationLogic(item);
+                  return (
                   <div
                     key={item.id}
                     className="px-5 py-3 flex items-center gap-4 hover:bg-muted/20 transition-colors"
@@ -411,6 +414,14 @@ export default function AccountItemsPage() {
                           </span>
                         )}
                       </div>
+                      <div className="flex items-start gap-1.5 mt-1.5 text-xs text-muted-foreground">
+                        <Calculator className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                        <span>
+                          <span className="font-medium text-foreground/80">{logic.method}</span>
+                          {" : "}
+                          {logic.detail}
+                        </span>
+                      </div>
                     </div>
                     {canEdit && (
                       <div className="flex gap-1 shrink-0">
@@ -435,7 +446,8 @@ export default function AccountItemsPage() {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))}

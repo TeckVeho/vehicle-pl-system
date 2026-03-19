@@ -15,7 +15,9 @@
 | 種別 | 連携元システム | 説明 |
 |------|----------------|------|
 | **マスタデータ** | **イズミクラウド** | ユーザー、部門（Department）、車両、コース、ドライバーなどのマスタは自社システム「イズミクラウド」から連携 |
+| **マスタデータ** | **PCA**（イズミクラウド経由） | 拠点別月額経費（旅費交通費・消耗品・修繕費等）は「PCA」からイズミクラウド経由で連携 |
 | **トランザクションデータ** | **タイムシート** | 日次乗務記録、ドライバー別月次金額、日次稼働・走行データは「タイムシート」から連携 |
+| **売上データ** | **各拠点のスプレッドシート** | 売上は各拠点でスプレッドシート管理されているため、そちらのデータを参照する形とする（当初予定していたデータ連携から変更）。参照ロジックは別途作成予定 |
 | **ドライバー・コース紐づき** | **ATMTC** → **イズミクラウド** | 日次乗務記録のためのドライバーとコースの紐づきは「ATMTC」で取得したものを「イズミクラウド」経由で本システムに連携 |
 
 ### 1.3 連携対象データ一覧
@@ -25,10 +27,11 @@
 | マスタ | ユーザー | イズミクラウド | POST /api/users/sync | 認証・権限管理（user_id で連携） |
 | マスタ | 部門（Department） | イズミクラウド | 本システム内で管理 | department id で識別 |
 | マスタ | 車両 | イズミクラウド | POST /api/vehicles/sync | 部門・コース紐づけ |
-| マスタ | 車両月次費用 | イズミクラウド | POST /api/vehicle-monthly-costs/sync | リース車償却・車両償却費・車両リース・損害保険料・賦課税 |
+| マスタ | 車両月次費用 | イズミクラウド（ITP経由項目あり） | POST /api/vehicle-monthly-costs/sync | 償却・リース・損害保険料(自賠責)・賦課税に加え、燃料費・道路使用料用の `fuelEfficiency` / `roadUsageFee` |
+| マスタ | 拠点別月額経費 | PCA（イズミクラウド経由） | POST /api/location-monthly-expenses/sync | 旅費交通費・消耗品・修繕費等20科目。拠点月額を車両数で按分 |
 | マスタ | コース | イズミクラウド | POST /api/courses/sync | 車両番号と1:1対応 |
 | マスタ | ドライバー | イズミクラウド | POST /api/drivers/sync | ATMTC の紐づきを経由 |
-| トランザクション | 月次損益 | イズミクラウド等 | POST /api/import または records/bulk | 経理・売上データ |
+| トランザクション | 月次損益 | イズミクラウド等 / 各拠点スプレッドシート | POST /api/import または records/bulk / スプレッドシート参照 | 経理データ（経費等）。**売上**（山崎製パン〜関東運輸）は各拠点スプレッドシート参照のみ |
 | トランザクション | 日次稼働・走行 | タイムシート | POST /api/daily-operating/sync | 回数単価・月額単価計算用 |
 | トランザクション | 日次乗務記録 | タイムシート | POST /api/driver-assignments/sync | ドライバー配賦の入力 |
 | トランザクション | ドライバー別月次金額 | タイムシート | POST /api/driver-monthly-amounts/sync | 乗務員給料等の配賦元 |
@@ -112,7 +115,9 @@ JWT は `POST /api/auth/login` で取得。有効期限は 7 日間。
 [1] 部門（Department）   … 本システム内で管理、イズミクラウドと department id で整合
 [2] コース（Course）     … イズミクラウドから POST /api/courses/sync
 [3] 車両（Vehicle）      … イズミクラウドから POST /api/vehicles/sync（courseId/courseExternalId で紐づけ）
-[4] 車両月次費用（VehicleMonthlyCost） … イズミクラウドから POST /api/vehicle-monthly-costs/sync（リース車償却・車両償却費・車両リース・損害保険料・賦課税）
+[4] 車両月次費用（VehicleMonthlyCost） … イズミクラウドから POST /api/vehicle-monthly-costs/sync（上記に加え ITP 由来の燃費・道路使用料の生データ）
+[4a] 拠点別計算パラメータ（LocationCalculationParameter） … 本システムで PUT /api/location-calculation-parameters（燃料単価・道路使用料割引率。燃料費・道路使用料の算出に必須）
+[4b] 拠点別月額経費（LocationMonthlyExpense） … PCA からイズミクラウド経由で POST /api/location-monthly-expenses/sync（旅費交通費・消耗品・修繕費等。車両数で按分）
 [5] ドライバー（Driver）  … イズミクラウドから POST /api/drivers/sync（ATMTC の紐づきを経由）
 [6] 月次損益（MonthlyRecord） … インポート or records/bulk
 [7] 日次稼働（DailyOperatingRecord） … タイムシートから POST /api/daily-operating/sync
@@ -298,12 +303,81 @@ JWT は `POST /api/auth/login` で取得。有効期限は 7 日間。
 | costs[].vehicleLease | - | 車両リース（6193） |
 | costs[].insuranceCost | - | 損害保険料（6194） |
 | costs[].taxCost | - | 賦課税（6195） |
+| costs[].fuelEfficiency | - | 燃費（L、ITP連携。燃料費算出用） |
+| costs[].roadUsageFee | - | 道路使用料（ITP連携の生データ。割引率適用前） |
 
-※ 損益計算書表示時、上記5科目は VehicleMonthlyCost の値を優先し、MonthlyRecord の値は参照しません。
+※ 損益計算書表示時、上記5科目は VehicleMonthlyCost の値を優先し、MonthlyRecord の値は参照しません。燃料費（6175）・道路使用料（6176）は前月の VehicleMonthlyCost と拠点別計算パラメータ（LocationCalculationParameter）で算出します。
 
 ---
 
-### 5.5 ドライバー一括同期
+### 5.5 拠点別月額経費一括同期
+
+**POST /api/location-monthly-expenses/sync**
+
+PCA からイズミクラウド経由で拠点ごとに月額経費を連携。各拠点の月額合計を車両数で按分し、車両別の MonthlyRecord に反映します。
+
+| 勘定科目 | 科目コード |
+|----------|------------|
+| 旅費交通費 | 6150 |
+| 消耗品 | 6151 |
+| 修繕費 | 6154 |
+| 通信費 | 6156 |
+| 水道光熱費 | 6159 |
+| 保険料 | 6160 |
+| 租税公課 | 6162 |
+| 他手数料 | 6164 |
+| 交際接待費 | 6165 |
+| 会議費 | 6166 |
+| 広告宣伝費 | 6167 |
+| 諸会費 | 6168 |
+| 地代家賃 | 6171 |
+| 借家料 | 6172 |
+| 賃借料 | 6173 |
+| 保守料 | 6174 |
+| 図書研修費 | 6177 |
+| 減価償却費 | 6178 |
+| 雑費 | 6188 |
+| 事故賠償費 | 6189 |
+
+| 項目 | 内容 |
+|------|------|
+| 権限 | MASTER |
+| Content-Type | application/json |
+
+**リクエストボディ**
+
+```json
+{
+  "yearMonth": "2026-03",
+  "expenses": [
+    {
+      "departmentId": "DEPT001",
+      "accountItemCode": "6150",
+      "amount": 100000
+    },
+    {
+      "locationId": "clxxx",
+      "accountItemCode": "6151",
+      "amount": 50000
+    }
+  ]
+}
+```
+
+| フィールド | 必須 | 説明 |
+|------------|------|------|
+| yearMonth | ○ | 対象年月（YYYY-MM） |
+| expenses | ○ | 拠点別経費の配列 |
+| expenses[].locationId | いずれか | 拠点ID（内部） |
+| expenses[].departmentId / locationCode | いずれか | 部門ID（イズミクラウドの department id） |
+| expenses[].accountItemCode | ○ | 勘定科目コード（上記20科目） |
+| expenses[].amount | ○ | 拠点の月額合計（円） |
+
+※ 按分ロジック: 拠点月額 ÷ その拠点の車両数 = 車両あたり金額。表示時は LocationMonthlyExpense を優先。
+
+---
+
+### 5.6 ドライバー一括同期
 
 **POST /api/drivers/sync**
 
@@ -344,7 +418,7 @@ JWT は `POST /api/auth/login` で取得。有効期限は 7 日間。
 
 ### 6.1 月次損益データ（車両損益計算書の本体）
 
-イズミクラウド等から経理・売上データを連携。
+経理データはイズミクラウド等から連携。**売上データ**については、当初データ連携を予定していたが、各拠点のスプレッドシートで売上を管理しているため、そちらのデータを参照する形に変更。参照ロジックは別途作成予定。
 
 #### 方式A: ファイルインポート（CSV/Excel）
 
@@ -486,7 +560,7 @@ JWT は `POST /api/auth/login` で取得。有効期限は 7 日間。
 
 **POST /api/driver-monthly-amounts/sync**
 
-**タイムシート**から連携。乗務員給料・業務給料・通勤手当・法定福利費・福利厚生費などを連携。連携後に配賦計算を実行。
+**タイムシート**から連携。乗務員給料・通勤手当・法定福利費などを連携。連携後に配賦計算を実行。乗務員給料・通勤手当は損益計算書表示時に乗車記録（DailyOperatingRecord）に基づき日次単価×乗車回数で按分。（業務給料・福利厚生費は手動インポート）
 
 | 項目 | 内容 |
 |------|------|
@@ -512,7 +586,7 @@ JWT は `POST /api/auth/login` で取得。有効期限は 7 日間。
 ```
 
 - 勘定科目は `isDriverRelated: true` のもののみ対象
-- 科目コード例: 乗務員給料(6138), 業務給料(6139), 通勤手当(6147), 法定福利費(6148), 福利厚生費(6149)
+- 科目コード例: 乗務員給料(6138), 通勤手当(6147), 法定福利費(6148)（業務給料6139・福利厚生費6149は手動インポートのため対象外）
 
 ---
 
@@ -572,6 +646,10 @@ JWT は `POST /api/auth/login` で取得。有効期限は 7 日間。
 | GET | /api/courses | コース一覧 |
 | GET | /api/drivers | ドライバー一覧 |
 | GET | /api/account-items | 勘定科目一覧（yearMonth で有効期間フィルタ可） |
+| GET | /api/location-calculation-parameters | 拠点別計算パラメータ一覧（yearMonth, locationId で絞り込み可） |
+| PUT | /api/location-calculation-parameters | 拠点別計算パラメータの登録・更新（燃料単価・使用料割引率、MASTER） |
+| POST | /api/vehicle-monthly-costs/sync | 車両月次費用一括同期（MASTER） |
+| POST | /api/location-monthly-expenses/sync | 拠点別月額経費一括同期（MASTER） |
 | GET | /api/income-statement/metadata | 勘定科目・部門（yearMonth 必須） |
 | GET | /api/income-statement | 損益データ取得（yearMonth, locationId 必須） |
 
@@ -617,6 +695,7 @@ JWT は `POST /api/auth/login` で取得。有効期限は 7 日間。
 │  │ MonthlyRecord│  │ Driver配賦  │  │ DailyOperatingRecord        │              │
 │  │ (月次損益)   │◄─│ (自動計算)   │  │ (日次稼働・走行)            │              │
 │  └─────────────┘  └─────────────┘  └─────────────────────────────┘              │
+│  ※ VehicleMonthlyCost / LocationMonthlyExpense は損益表示で優先参照（sync API 経由で投入） │
 └─────────────────────────────────────────────────────────────────────────────────┘
            │
            ▼
@@ -643,7 +722,9 @@ JWT は `POST /api/auth/login` で取得。有効期限は 7 日間。
 
 | ドキュメント | 内容 |
 |--------------|------|
+| [external-system-implementation-checklist.md](external-system-implementation-checklist.md) | 各外部システム側で実装が必要な内容 |
 | [system-overview.md](system-overview.md) | システム概要・アーキテクチャ |
 | [db-schema.md](db-schema.md) | データベーススキーマ |
 | [department-id-standard.md](department-id-standard.md) | 部門IDの共通化ルール |
 | [driver-allocation-api.md](driver-allocation-api.md) | ドライバー配賦 API 詳細 |
+| [account-item-calculation-spec.md](account-item-calculation-spec.md) | 勘定科目ごとの取得・計算方法 |

@@ -1,8 +1,11 @@
 import { prisma } from "./prisma.js";
+import { SALARY_DAILY_PRORATION_CODES } from "./salary-daily-proration.js";
 
 /**
  * ドライバー配賦を実行し、MonthlyRecord を更新する。
  * 乗務日数按分（1日複数車両の場合はその日のウェイトを 1/車両数 で按分）
+ *
+ * ※乗務員給料・通勤手当は salary-run-count-allocation.ts で乗車回数ベース配賦のため除外
  *
  * @param yearMonth "YYYY-MM"
  * @param locationId 指定時は該当拠点の車両のみ対象
@@ -12,7 +15,11 @@ export async function runDriverAllocation(
   locationId?: string | null
 ): Promise<{ vehiclesUpdated: number; recordsUpdated: number }> {
   const driverRelatedItems = await prisma.accountItem.findMany({
-    where: { isDriverRelated: true, isSubtotal: false },
+    where: {
+      isDriverRelated: true,
+      isSubtotal: false,
+      code: { notIn: Array.from(SALARY_DAILY_PRORATION_CODES) },
+    },
     select: { id: true },
   });
   const driverRelatedIds = new Set(driverRelatedItems.map((a) => a.id));

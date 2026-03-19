@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { requireRole, ROLES } from "../lib/auth.js";
 import { runDriverAllocation } from "../lib/driver-allocation.js";
+import { runSalaryRunCountAllocation } from "../lib/salary-run-count-allocation.js";
 
 export const driverMonthlyAmountsRouter = Router();
 
@@ -125,7 +126,10 @@ driverMonthlyAmountsRouter.post("/sync", requireRole(ROLES.MASTER), async (req: 
       upserted++;
     }
 
-    const allocationResult = await runDriverAllocation(yearMonthStr, locId);
+    const [allocationResult, salaryAllocationResult] = await Promise.all([
+      runDriverAllocation(yearMonthStr, locId),
+      runSalaryRunCountAllocation(yearMonthStr, locId),
+    ]);
 
     await prisma.dataSyncLog.create({
       data: {
@@ -141,6 +145,7 @@ driverMonthlyAmountsRouter.post("/sync", requireRole(ROLES.MASTER), async (req: 
       success: true,
       upserted,
       allocation: allocationResult,
+      salaryAllocation: salaryAllocationResult,
       ...(errors.length > 0 && { errors }),
     });
   } catch (e) {
