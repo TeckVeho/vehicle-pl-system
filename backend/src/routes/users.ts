@@ -201,7 +201,7 @@ usersRouter.post("/sync", async (req: Request, res: Response) => {
     const results: { email: string; status: "created" | "updated"; id: string }[] = [];
 
     for (const u of users) {
-      const { email, name, role, externalId, userId, password } = u;
+      const { email, name, role, externalId, userId, password, createdAt, updatedAt } = u;
       const extId = externalId ?? userId;
       if (!email || !name || !role) continue;
       if (!VALID_ROLES.includes(role)) continue;
@@ -210,12 +210,17 @@ usersRouter.post("/sync", async (req: Request, res: Response) => {
         ? await bcrypt.hash(String(password), 10)
         : await bcrypt.hash("changeme", 10);
 
+      const timestamps: Record<string, Date> = {};
+      if (createdAt) timestamps.createdAt = new Date(createdAt);
+      if (updatedAt) timestamps.updatedAt = new Date(updatedAt);
+
       const data = {
         email: String(email).trim(),
         name: String(name).trim(),
         role: String(role),
         externalId: extId ? String(extId).trim() : null,
         passwordHash,
+        ...timestamps,
       };
 
       const existing = extId
@@ -230,6 +235,8 @@ usersRouter.post("/sync", async (req: Request, res: Response) => {
             role: data.role,
             externalId: data.externalId,
             ...(password && { passwordHash: data.passwordHash }),
+            ...(createdAt && { createdAt: new Date(createdAt) }),
+            ...(updatedAt && { updatedAt: new Date(updatedAt) }),
           },
         });
         results.push({ email: data.email, status: "updated", id: updated.id });
