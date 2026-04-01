@@ -1,0 +1,63 @@
+diff --git a/app/Repositories/VehicleRepository.php b/app/Repositories/VehicleRepository.php
+index 6f0a3a41..4bb25dea 100644
+--- a/app/Repositories/VehicleRepository.php
++++ b/app/Repositories/VehicleRepository.php
+@@ -80,7 +80,7 @@ public function paginate($limit = null, $columns = ['*'], $method = "paginate",
+             $this->model = $this->model
+                 ->where(function ($query) use ($today) {
+                     $query->whereNull('vehicles.scrap_date')
+-                        ->orWhere('vehicles.scrap_date', '>', $today);
++                        ->orWhere('vehicles.scrap_date', '>=', $today);
+                 });
+         }
+ 
+@@ -522,7 +522,7 @@ public function getAllVehicle($request) {
+             $this->model = $this->model
+                 ->where(function ($query) use ($today) {
+                     $query->whereNull('vehicles.scrap_date')
+-                        ->orWhere('vehicles.scrap_date', '>', $today);
++                        ->orWhere('vehicles.scrap_date', '>=', $today);
+                 });
+         }
+ 
+@@ -560,13 +560,13 @@ public function getAllVehicle($request) {
+             $this->model = $this->model->addSelect(
+                 'vehicles.*',
+                 'departments.name as department_name',
+-                DB::raw("CASE WHEN vehicles.scrap_date <= '{$today}' THEN vehicles.scrap_date ELSE NULL END AS scrap_date_custom")
++                DB::raw("CASE WHEN vehicles.scrap_date < '{$today}' THEN vehicles.scrap_date ELSE NULL END AS scrap_date_custom")
+             );
+         } else {
+             $this->model = $this->model->addSelect(
+                 'vehicles.*',
+                 'departments.name as department_name',
+-                DB::raw("CASE WHEN vehicles.scrap_date <= '{$today}' THEN vehicles.scrap_date ELSE NULL END AS scrap_date_custom")
++                DB::raw("CASE WHEN vehicles.scrap_date < '{$today}' THEN vehicles.scrap_date ELSE NULL END AS scrap_date_custom")
+             );
+         }
+ 
+@@ -610,7 +610,7 @@ public function getDashboardVehicle($request) {
+             $this->model = $this->model
+                 ->where(function ($query) use ($today) {
+                     $query->whereNull('vehicles.scrap_date')
+-                        ->orWhere('vehicles.scrap_date', '>', $today);
++                        ->orWhere('vehicles.scrap_date', '>=', $today);
+                 });
+         }
+         if ($vehicle_identification_number) {
+@@ -627,13 +627,13 @@ public function getDashboardVehicle($request) {
+             $this->model = $this->model->addSelect(
+                 'vehicles.*',
+                 'departments.name as department_name',
+-                DB::raw("CASE WHEN vehicles.scrap_date <= '{$today}' THEN vehicles.scrap_date ELSE NULL END AS scrap_date_custom")
++                DB::raw("CASE WHEN vehicles.scrap_date < '{$today}' THEN vehicles.scrap_date ELSE NULL END AS scrap_date_custom")
+             );
+         } else {
+             $this->model = $this->model->addSelect(
+                 'vehicles.*',
+                 'departments.name as department_name',
+-                DB::raw("CASE WHEN vehicles.scrap_date <= '{$today}' THEN vehicles.scrap_date ELSE NULL END AS scrap_date_custom")
++                DB::raw("CASE WHEN vehicles.scrap_date < '{$today}' THEN vehicles.scrap_date ELSE NULL END AS scrap_date_custom")
+             );
+         }
+         $user = auth()->user()->load(['roles']);

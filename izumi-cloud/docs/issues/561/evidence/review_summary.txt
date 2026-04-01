@@ -1,0 +1,213 @@
+Manual Review Summary - Issue #561
+=====================================
+
+Review Date: 2025-12-26
+Reviewer: AI Agent
+Review Type: Code Review + Logic Verification
+
+FILE REVIEWED
+-------------
+app/Repositories/VehicleRepository.php
+
+CHANGES SUMMARY
+---------------
+Total Changes: 7 operator modifications
+- Changed `<=` to `<` in 4 locations (scrap_date_custom calculation)
+- Changed `>` to `>=` in 3 locations (hide_scrap_date filter)
+
+DETAILED REVIEW
+---------------
+
+1. paginate() Method - Line 83
+   Location: app/Repositories/VehicleRepository.php:83
+   Change: `>` → `>=`
+   Purpose: hide_scrap_date filter
+   Status: ✓ CORRECT
+   Verification: Vehicles with scrap_date = today should be displayed when filter is ON
+
+2. getAllVehicle() Method - Line 563
+   Location: app/Repositories/VehicleRepository.php:563
+   Change: `<=` → `<`
+   Purpose: scrap_date_custom calculation (number_plate search)
+   Status: ✓ CORRECT
+   Verification: Only vehicles with scrap_date < today should be greyed out
+
+3. getAllVehicle() Method - Line 569
+   Location: app/Repositories/VehicleRepository.php:569
+   Change: `<=` → `<`
+   Purpose: scrap_date_custom calculation (normal search)
+   Status: ✓ CORRECT
+   Verification: Only vehicles with scrap_date < today should be greyed out
+
+4. getAllVehicle() Method - Line 525
+   Location: app/Repositories/VehicleRepository.php:525
+   Change: `>` → `>=`
+   Purpose: hide_scrap_date filter
+   Status: ✓ CORRECT
+   Verification: Vehicles with scrap_date = today should be displayed when filter is ON
+
+5. getDashboardVehicle() Method - Line 630
+   Location: app/Repositories/VehicleRepository.php:630
+   Change: `<=` → `<`
+   Purpose: scrap_date_custom calculation (number_plate search)
+   Status: ✓ CORRECT
+   Verification: Only vehicles with scrap_date < today should be greyed out
+
+6. getDashboardVehicle() Method - Line 636
+   Location: app/Repositories/VehicleRepository.php:636
+   Change: `<=` → `<`
+   Purpose: scrap_date_custom calculation (normal search)
+   Status: ✓ CORRECT
+   Verification: Only vehicles with scrap_date < today should be greyed out
+
+7. getDashboardVehicle() Method - Line 613
+   Location: app/Repositories/VehicleRepository.php:613
+   Change: `>` → `>=`
+   Purpose: hide_scrap_date filter
+   Status: ✓ CORRECT
+   Verification: Vehicles with scrap_date = today should be displayed when filter is ON
+
+LOGIC VERIFICATION
+------------------
+
+Test Case 1: scrap_date = yesterday
+  Expected: Grey out
+  Logic: scrap_date < today → TRUE
+  Result: scrap_date_custom = scrap_date → Frontend applies darker-bg-td
+  Status: ✓ PASS (Logic correct)
+
+Test Case 2: scrap_date = today (CRITICAL)
+  Expected: Normal display (no grey out)
+  Logic: scrap_date < today → FALSE
+  Result: scrap_date_custom = NULL → Frontend shows normal
+  Status: ✓ PASS (Logic correct)
+
+Test Case 3: scrap_date = tomorrow
+  Expected: Normal display
+  Logic: scrap_date < today → FALSE
+  Result: scrap_date_custom = NULL → Frontend shows normal
+  Status: ✓ PASS (Logic correct)
+
+Test Case 4: scrap_date = NULL
+  Expected: Normal display
+  Logic: scrap_date is NULL
+  Result: scrap_date_custom = NULL → Frontend shows normal
+  Status: ✓ PASS (Logic correct)
+
+Filter Test 1: hide_scrap_date = ON, scrap_date = today
+  Expected: Vehicle displayed
+  Logic: scrap_date >= today → TRUE
+  Result: Vehicle included in list
+  Status: ✓ PASS (Logic correct)
+
+Filter Test 2: hide_scrap_date = ON, scrap_date = yesterday
+  Expected: Vehicle hidden
+  Logic: scrap_date >= today → FALSE
+  Result: Vehicle excluded from list
+  Status: ✓ PASS (Logic correct)
+
+CONSISTENCY CHECK
+-----------------
+Display Logic vs Filter Logic:
+
+| scrap_date | Display (scrap_date_custom) | Filter (hide_scrap_date ON) | Consistent? |
+|------------|---------------------------|----------------------------|-------------|
+| Yesterday  | Grey out (< today → TRUE)  | Hidden (>= today → FALSE)   | ✓ YES       |
+| Today      | Normal (< today → FALSE)   | Shown (>= today → TRUE)     | ✓ YES       |
+| Tomorrow   | Normal (< today → FALSE)   | Shown (>= today → TRUE)     | ✓ YES       |
+| NULL       | Normal (NULL)              | Shown (NULL)                | ✓ YES       |
+
+Result: ✓ ALL CONSISTENT - Display and filter logic work together correctly
+
+CODE QUALITY CHECKS
+-------------------
+✓ No syntax errors
+✓ No linter errors
+✓ Consistent formatting maintained
+✓ No breaking changes to API
+✓ No database schema changes
+✓ No new dependencies introduced
+✓ All changes are minimal and focused
+✓ No unrelated code modifications
+
+REQUIREMENTS COMPLIANCE
+-----------------------
+Requirement 1: 廃車日を設定した日の翌日からグレーアウト
+  Status: ✓ MET
+  Evidence: Logic changed from `<=` to `<`, ensuring grey out starts from next day
+
+Requirement 2: 今日の廃車日の車両も表示される（フィルター使用時）
+  Status: ✓ MET
+  Evidence: Filter logic changed from `>` to `>=`, ensuring today's vehicles are shown
+
+Requirement 3: 横浜800い1757 の車両で動作確認
+  Status: ⏳ PENDING
+  Note: Requires manual testing in actual environment
+
+INTEGRATION POINTS
+------------------
+Frontend Integration:
+  - Frontend code: resources/js/pages/VehicleMaster/index.vue
+  - Frontend method: handleRenderCellClass()
+  - Integration: Frontend checks item['scrap_date'] !== null
+  - Impact: ✓ NO CHANGES NEEDED - Backend controls scrap_date value
+  - Status: ✓ COMPATIBLE
+
+Database Integration:
+  - Table: vehicles
+  - Column: scrap_date
+  - Type: DATE
+  - Impact: ✓ NO SCHEMA CHANGES
+  - Status: ✓ COMPATIBLE
+
+API Integration:
+  - Endpoints affected: Vehicle list, Vehicle dashboard
+  - Response structure: Unchanged
+  - Impact: ✓ NO BREAKING CHANGES
+  - Status: ✓ COMPATIBLE
+
+RISK ASSESSMENT
+---------------
+Risk Level: LOW
+
+Identified Risks:
+1. Existing data display changes
+   Severity: Low
+   Mitigation: Expected behavior per specification
+
+2. User confusion
+   Severity: Low
+   Mitigation: Customer already informed (issue #560)
+
+3. Impact on other features
+   Severity: Very Low
+   Mitigation: Changes isolated to VehicleRepository only
+
+RECOMMENDATIONS
+---------------
+1. ✓ All code changes are correct and meet requirements
+2. ✓ Logic is consistent across all methods
+3. ✓ No breaking changes or side effects detected
+4. ⚠ Manual testing required in staging environment
+5. ⚠ Specific vehicle test (横浜800い1757) required
+6. ✓ Ready to proceed to PR phase after manual testing
+
+FINAL VERDICT
+-------------
+Status: ✓ APPROVED FOR MANUAL TESTING
+Confidence: HIGH (95%)
+
+All code changes are logically correct and meet the requirements.
+The implementation is ready for manual testing in staging environment.
+After successful manual testing, the code is ready for PR and deployment.
+
+NEXT STEPS
+----------
+1. Deploy to staging environment
+2. Perform manual testing with test cases
+3. Test with specific vehicle 横浜800い1757
+4. Verify filter functionality
+5. If all tests pass, proceed to /pr phase
+6. Deploy to production
+7. Notify customer of completion
+

@@ -1,0 +1,157 @@
+# Issue #468: Add option to exclude movies from auto-loop delivery
+
+## Metadata
+
+- **Title:** Add option to exclude movies from auto-loop delivery
+- **Issue URL:** https://github.com/TeckVeho/Izumi_Issue-Requests-Repo/issues/468
+- **Status:** OPEN
+- **Created At:** 2025-11-28T08:38:48Z
+- **Updated At:** 2025-11-28T08:39:08Z
+- **Assignees:** 
+  - hathaiviet411 (Hà Thái Việt)
+  - phuongcodeunited
+- **Labels:** None
+
+---
+
+## 1. 概要 (Overview) / Tổng quan
+
+### 背景 (Background) / Bối cảnh
+
+**現状の課題 / Vấn đề hiện tại:**
+- ムービー配信部分では、ムービーを日次自動的に順序にループ送信するという仕組みがあります。配信スケジュールは「配信予定」画面に表示されています。今回の要件：配信ループから外すムービーがあります。
+- Trong phần phát sóng video, có một cơ chế gửi video tự động theo thứ tự lặp hàng ngày. Lịch phát sóng được hiển thị trên màn hình "Lịch phát sóng dự kiến". Yêu cầu lần này: Có những video cần loại trừ khỏi vòng lặp phát sóng.
+
+**ビジネス要求 / Yêu cầu kinh doanh:**
+- ムービー一覧にループ対象外のフラグを設定できるようにし、特定のムービーが自動ループ配信の対象外となることで、配信の柔軟性を向上させる。
+- Cần có khả năng thiết lập cờ không lặp cho danh sách video, để một số video cụ thể không trở thành đối tượng của phát sóng tự động lặp, từ đó nâng cao tính linh hoạt trong phát sóng.
+
+**ユーザーストーリー / Câu chuyện người dùng:**
+- ユーザーとして、私は特定のムービーを自動ループ配信から除外したい。
+- Là một người dùng, tôi muốn loại trừ một số video cụ thể khỏi phát sóng tự động lặp.
+
+### 達成目標 (Goal) / Mục tiêu đạt được
+
+**あるべき姿 / Hình ảnh lý tưởng:**
+- ムービー一覧にループ対象外のフラグを設定可能にする。
+- フラグ設定されたムービーはループ送信しないようにする。
+
+**詳細 / Chi tiết:**
+- ムービー一覧画面で、ムービーのサムネールの下にトグルボタンを追加する。
+- トグルボタンがONの場合、そのムービーはループ送信される対象となります。
+- トグルボタンがOFFの場合、そのムービーはループ送信の対象外となります。
+- デフォールトはONです。
+
+**Tiếng Việt:**
+- Thêm nút chuyển đổi dưới thumbnail của video trên màn hình danh sách video.
+- Khi nút chuyển đổi ở trạng thái BẬT, video đó sẽ trở thành đối tượng của phát sóng lặp.
+- Khi nút chuyển đổi ở trạng thái TẮT, video đó sẽ không nằm trong đối tượng phát sóng lặp.
+- Mặc định là BẬT.
+
+---
+
+## 2. 仕様 (Specification) / Thông số kỹ thuật
+
+### 機能要件 (Functional Requirements) / Yêu cầu chức năng
+
+1. **トグルボタンの表示 / Hiển thị nút chuyển đổi**
+   - ムービー一覧画面において、各ムービーのサムネールの下にトグルボタンを表示する。
+   - Hiển thị nút chuyển đổi dưới thumbnail của mỗi video trên màn hình danh sách video.
+
+2. **ON状態の動作 / Hoạt động khi BẬT**
+   - ユーザーがトグルボタンをONにした場合、そのムービーはループ送信の対象となる。
+   - Khi người dùng bật nút chuyển đổi, video đó sẽ trở thành đối tượng của phát sóng lặp.
+
+3. **OFF状態の動作 / Hoạt động khi TẮT**
+   - ユーザーがトグルボタンをOFFにした場合、そのムービーはループ送信の対象外となる。
+   - Khi người dùng tắt nút chuyển đổi, video đó sẽ không nằm trong đối tượng phát sóng lặp.
+
+4. **デフォルト設定 / Cài đặt mặc định**
+   - トグルボタンのデフォルト設定はONとする。
+   - Cài đặt mặc định của nút chuyển đổi là BẬT.
+
+5. **データ永続化 / Lưu trữ dữ liệu**
+   - ムービーのループ対象外フラグの設定は、データベースに保存され、次回の配信時に反映される。
+   - Cờ không lặp của video sẽ được lưu trong cơ sở dữ liệu và được phản ánh trong lần phát sóng tiếp theo.
+
+### タスクタイプ / Loại tác vụ
+要件 / Yêu cầu
+
+---
+
+## 3. 完了条件 (Definition of Done) / Điều kiện hoàn thành
+
+### Frontend (FE)
+- [ ] ムービー一覧画面にトグルボタンが追加されていること
+- [ ] Nút chuyển đổi đã được thêm vào màn hình danh sách video
+- [ ] ユーザーがトグルボタンを操作できること
+- [ ] Người dùng có thể thao tác với nút chuyển đổi
+- [ ] デフォルト設定がONであること
+- [ ] Cài đặt mặc định là BẬT
+- [ ] トグルボタンの状態がUIに正しく反映されること
+- [ ] Trạng thái nút chuyển đổi được phản ánh chính xác trên UI
+
+### Backend (BE)
+- [ ] ムービーテーブルにループ対象外フラグのカラムを追加
+- [ ] Thêm cột cờ không lặp vào bảng video
+- [ ] トグルボタンの状態を保存するAPIエンドポイントを実装
+- [ ] Triển khai API endpoint để lưu trạng thái nút chuyển đổi
+- [ ] ループ送信ロジックでフラグを考慮した実装
+- [ ] Triển khai logic phát sóng lặp có xét đến cờ
+- [ ] トグルボタンがONの状態でムービーがループ送信されること
+- [ ] Video được gửi theo vòng lặp khi nút chuyển đổi ở trạng thái BẬT
+- [ ] トグルボタンがOFFの状態でムービーがループ送信されないこと
+- [ ] Video không được gửi theo vòng lặp khi nút chuyển đổi ở trạng thái TẮT
+
+---
+
+## 4. 技術的考慮事項 / Các cân nhắc kỹ thuật
+
+### Database Schema
+- 既存のムービーテーブルに新しいカラムを追加する必要がある
+- Cần thêm cột mới vào bảng video hiện có
+- カラム名候補: `is_loop_enabled`, `exclude_from_loop`, `loop_delivery_flag`
+- Tên cột đề xuất: `is_loop_enabled`, `exclude_from_loop`, `loop_delivery_flag`
+- デフォルト値: `true` または `1` (ON状態)
+- Giá trị mặc định: `true` hoặc `1` (trạng thái BẬT)
+
+### API Endpoints
+- ムービーのループフラグを更新するエンドポイント
+- Endpoint để cập nhật cờ lặp của video
+- ムービー一覧取得時にフラグ情報を含める
+- Bao gồm thông tin cờ khi lấy danh sách video
+
+### Loop Delivery Logic
+- 配信スケジュール生成時にフラグをチェック
+- Kiểm tra cờ khi tạo lịch phát sóng
+- フラグがOFFのムービーを除外する処理
+- Xử lý loại trừ video có cờ TẮT
+
+---
+
+## 5. Notes / Ghi chú
+
+### 起票者 / Người khởi tạo
+Đào Thị Thư
+
+### 開発ブランチ / Branch phát triển
+`468-feat-movie-auto-loop-exclusion`
+
+### 関連ファイル / File liên quan
+- Frontend: ムービー一覧コンポーネント / Component danh sách video
+- Backend: ムービーモデル、配信スケジュールロジック / Model video, logic lịch phát sóng
+- Database: マイグレーションファイル / File migration
+
+---
+
+## 6. Review Notes / Ghi chú đánh giá
+
+_このセクションは実装中および実装後のレビューノートに使用します。_
+_Phần này được sử dụng cho ghi chú đánh giá trong và sau khi triển khai._
+
+---
+
+**Generated by:** Cursor AI Agent
+**Generated at:** 2025-11-28
+**Branch:** 468-feat-movie-auto-loop-exclusion
+

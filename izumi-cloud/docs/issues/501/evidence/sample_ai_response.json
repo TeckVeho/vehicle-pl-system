@@ -1,0 +1,35 @@
+{
+    "summary": {
+        "total_distance_km": 52.4,
+        "estimated_end_time": "13:30",
+        "date_change": false,
+        "compliance_check": {
+            "is_compliant": true,
+            "applied_rule": "運転時間が4時間を超えないため、労働基準法に基づき60分の休憩を追加しました"
+        }
+    },
+    "time_breakdown": {
+        "total_duty_time_hours": 5.5,
+        "actual_working_hours": 4.5,
+        "total_driving_time_minutes": 90,
+        "total_handling_time_minutes": 120,
+        "total_break_time_minutes": 60
+    },
+    "cost_breakdown": {
+        "estimated_total_tolls": 1500
+    },
+    "route_details": {
+        "section_1_pickup_to_delivery": {
+            "distance_km": 26.2,
+            "driving_time_minutes": 45,
+            "toll_yen": 750,
+            "route_description": "首都高速都心環状線から湾岸線経由で横浜みなとみらいへ"
+        },
+        "section_2_delivery_to_return": {
+            "distance_km": 26.2,
+            "driving_time_minutes": 45,
+            "toll_yen": 750,
+            "route_description": "湾岸線から首都高速都心環状線経由で東京タワーへ戻る"
+        }
+    }
+}

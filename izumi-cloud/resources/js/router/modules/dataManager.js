@@ -1,0 +1,137 @@
+import Layout from '@/layout';
+import CONST_ROLE from '@/const/role';
+
+const dataManager = {
+    path: '/data-manager',
+    name: 'DataManager',
+    meta: {
+        title: 'DATA_MANAGER',
+        icon: 'fas fa-database',
+        roles: [
+            CONST_ROLE.ACCOUNTING,
+            CONST_ROLE.GENERAL_AFFAIRS,
+            CONST_ROLE.PERSONNEL_LABOR,
+            CONST_ROLE.DIRECTOR,
+            CONST_ROLE.DX_USER,
+            CONST_ROLE.DX_MANAGER,
+            CONST_ROLE.HQ_MANAGER,
+            CONST_ROLE.DEPARTMENT_MANAGER,
+            CONST_ROLE.EXECUTIVE_OFFICER,
+            CONST_ROLE.DIRECTOR,
+        ],
+    },
+    component: Layout,
+    redirect: {
+        name: 'DataListIndex',
+    },
+    children: [
+        {
+            path: 'data-list/list',
+            meta: {
+                title: 'ROUTER_DATA_LIST',
+                icon: 'fas fa-folder',
+                roles: [
+                    CONST_ROLE.ACCOUNTING,
+                    CONST_ROLE.GENERAL_AFFAIRS,
+                    CONST_ROLE.PERSONNEL_LABOR,
+                    CONST_ROLE.DIRECTOR,
+                    CONST_ROLE.DX_USER,
+                    CONST_ROLE.DX_MANAGER,
+                    CONST_ROLE.HQ_MANAGER,
+                    CONST_ROLE.DEPARTMENT_MANAGER,
+                    CONST_ROLE.EXECUTIVE_OFFICER,
+                    CONST_ROLE.DIRECTOR,
+                ],
+            },
+            name: 'DataListIndex',
+            component: () => import(/* webpackChunkName: "DataListIndex" */ '@/pages/DataList/List.vue'),
+        },
+        {
+            path: 'data-list/detail/:id',
+            name: 'DataListDetail',
+            meta: {
+                title: 'ROUTER_DATA_LIST_PAGE_DETAIL',
+                roles: [
+                    CONST_ROLE.ACCOUNTING,
+                    CONST_ROLE.GENERAL_AFFAIRS,
+                    CONST_ROLE.PERSONNEL_LABOR,
+                    CONST_ROLE.DIRECTOR,
+                    CONST_ROLE.DX_USER,
+                    CONST_ROLE.DX_MANAGER,
+                    CONST_ROLE.HQ_MANAGER,
+                    CONST_ROLE.DEPARTMENT_MANAGER,
+                    CONST_ROLE.EXECUTIVE_OFFICER,
+                    CONST_ROLE.DIRECTOR,
+                ],
+            },
+            hidden: true,
+            component: () => import(/* webpackChunkName: "DataListDetail" */ '@/pages/DataList/Detail.vue'),
+        },
+        {
+            path: 'data-connect/list',
+            name: 'DataConnectIndex',
+            meta: {
+                title: 'ROUTER_DATA_CONNECT',
+                icon: 'fas fa-repeat-alt',
+                roles: [
+                    CONST_ROLE.ACCOUNTING,
+                    CONST_ROLE.GENERAL_AFFAIRS,
+                    CONST_ROLE.PERSONNEL_LABOR,
+                    CONST_ROLE.DIRECTOR,
+                    CONST_ROLE.DX_USER,
+                    CONST_ROLE.DX_MANAGER,
+                    CONST_ROLE.HQ_MANAGER,
+                    CONST_ROLE.DEPARTMENT_MANAGER,
+                    CONST_ROLE.EXECUTIVE_OFFICER,
+                    CONST_ROLE.DIRECTOR,
+                ],
+            },
+            component: () => import(/* webpackChunkName: "DataConnectIndex" */ '@/pages/DataConnect/List.vue'),
+        },
+        {
+            path: 'data-connect/detail/:id',
+            name: 'DataConnectDetail',
+            meta: {
+                title: 'ROUTER_DATA_CONNECT_PAGE_DETAIL',
+                icon: 'fas fa-repeat-alt',
+                roles: [
+                    CONST_ROLE.ACCOUNTING,
+                    CONST_ROLE.GENERAL_AFFAIRS,
+                    CONST_ROLE.PERSONNEL_LABOR,
+                    CONST_ROLE.DIRECTOR,
+                    CONST_ROLE.DX_USER,
+                    CONST_ROLE.DX_MANAGER,
+                    CONST_ROLE.HQ_MANAGER,
+                    CONST_ROLE.DEPARTMENT_MANAGER,
+                    CONST_ROLE.EXECUTIVE_OFFICER,
+                    CONST_ROLE.DIRECTOR,
+                ],
+            },
+            hidden: true,
+            component: () => import(/* webpackChunkName: "DataConnectDetail" */ '@/pages/DataConnect/Detail.vue'),
+        },
+        {
+            path: 'data-import/index',
+            name: 'DataImportIndex',
+            meta: {
+                title: 'ROUTER_DATA_IMPORT',
+                icon: 'far fa-file-import',
+                roles: [
+                    CONST_ROLE.ACCOUNTING,
+                    CONST_ROLE.GENERAL_AFFAIRS,
+                    CONST_ROLE.PERSONNEL_LABOR,
+                    CONST_ROLE.DIRECTOR,
+                    CONST_ROLE.DX_USER,
+                    CONST_ROLE.DX_MANAGER,
+                    CONST_ROLE.HQ_MANAGER,
+                    CONST_ROLE.DEPARTMENT_MANAGER,
+                    CONST_ROLE.EXECUTIVE_OFFICER,
+                    CONST_ROLE.DIRECTOR,
+                ],
+            },
+            component: () => import(/* webpackChunkName: "DataImportIndex" */ '@/pages/DataImport/index.vue'),
+        },
+    ],
+};
+
+export default dataManager;

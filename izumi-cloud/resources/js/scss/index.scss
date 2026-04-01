@@ -1,0 +1,8 @@
+@import 'variables.scss';
+@import 'config.scss';
+@import 'pagination.scss';
+@import 'date-picker.scss';
+
+// Bootstrap and its default variables
+@import '../../../node_modules/bootstrap/scss/bootstrap.scss';
+@import '../../../node_modules/bootstrap-vue/src/index.scss';

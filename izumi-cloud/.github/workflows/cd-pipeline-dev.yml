@@ -1,0 +1,167 @@
+name: CD Pipeline - DEV Environment
+
+# Cấu hình GitHub Environment "develop" + Secrets (tách biệt staging).
+# Tham khảo: izumi-smart-approval cd-pipeline-dev.yml
+
+on:
+  # push:
+  #   branches: [develop]
+  workflow_dispatch:
+
+env:
+  # FE: cố định Node 14
+  NODE_VERSION: '14.21.3'
+  COMPOSER_TIMEOUT: 2000
+
+jobs:
+  deploy-to-dev:
+    runs-on: ubuntu-latest
+    environment: develop
+    env:
+      # Map secrets → env: `if:` không được dùng `secrets.*` trực tiếp (Invalid workflow).
+      PM2_APP_NAME: ${{ secrets.PM2_APP_NAME }}
+      HEALTH_CHECK_URL: ${{ secrets.HEALTH_CHECK_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check branch
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/develop" ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "Chỉ cho nhánh develop hoặc workflow_dispatch."
+            exit 1
+          fi
+          echo "OK — deploy DEV"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
+      - name: Install frontend dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Create .env from envbasic + secrets
+        run: |
+          set -e
+          cat .github/workflows/envbasic/.env.basic_develop >> .env
+          {
+            echo "APP_KEY=${{ secrets.APP_KEY }}"
+            echo "JWT_SECRET=${{ secrets.JWT_SECRET }}"
+            echo "DB_HOST=${{ secrets.DB_HOST }}"
+            echo "DB_DATABASE=${{ secrets.DB_DATABASE }}"
+            echo "DB_USERNAME=${{ secrets.DB_USERNAME }}"
+            echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}"
+            echo "MAIL_USERNAME=${{ secrets.MAIL_USERNAME }}"
+            echo "MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }}"
+            echo "MAIL_FROM_ADDRESS=${{ secrets.MAIL_FROM_ADDRESS }}"
+            echo "AWS_DEFAULT_REGION=${{ secrets.AWS_DEFAULT_REGION }}"
+            echo "AWS_BUCKET=${{ secrets.AWS_BUCKET }}"
+            echo "AWS_URL=${{ secrets.AWS_URL }}"
+            echo "PUSHER_APP_ID=${{ secrets.PUSHER_APP_ID }}"
+            echo "PUSHER_APP_KEY=${{ secrets.PUSHER_APP_KEY }}"
+            echo "PUSHER_APP_SECRET=${{ secrets.PUSHER_APP_SECRET }}"
+            echo "PUSHER_APP_CLUSTER=${{ secrets.PUSHER_APP_CLUSTER }}"
+            echo "MIX_PUSHER_APP_KEY=${{ secrets.PUSHER_APP_KEY }}"
+            echo "MIX_PUSHER_APP_CLUSTER=${{ secrets.PUSHER_APP_CLUSTER }}"
+            echo "LW_CLIENT_SECRET=${{ secrets.LW_CLIENT_SECRET }}"
+            echo "LW_CLIENT_ID=${{ secrets.LW_CLIENT_ID }}"
+            echo "LW_BOT_ID=${{ secrets.LW_BOT_ID }}"
+            echo "LW_CHANNEL_ID=${{ secrets.LW_CHANNEL_ID }}"
+            echo "LW_SERVICE_ACCOUNT=${{ secrets.LW_SERVICE_ACCOUNT }}"
+            echo "SENTRY_LARAVEL_DSN=${{ secrets.SENTRY_LARAVEL_DSN }}"
+          } >> .env
+
+      - name: Build frontend assets
+        run: |
+          npm run production
+          test -f public/mix-manifest.json
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "${{ secrets.SSH_DEPLOY_PEM }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST_SERVER }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Deploy via rsync + remote Composer / Artisan
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST_SERVER }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOYPATH: ${{ secrets.DEPLOY_PATH }}
+          PHP_BIN: ${{ secrets.DEPLOY_PHP_BIN }}
+        run: |
+          set -e
+          SSH_KEY="${HOME}/.ssh/deploy_key"
+          PHP_CMD="${PHP_BIN:-php}"
+          rsync -avz --delete \
+            -e "ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no" \
+            --exclude='.env' \
+            --exclude='node_modules' \
+            --exclude='vendor' \
+            --exclude='.git' \
+            --exclude='tests' \
+            --exclude='storage/app' \
+            --exclude='storage/logs' \
+            --exclude='storage/framework/cache' \
+            --exclude='storage/framework/sessions' \
+            --exclude='storage/framework/views' \
+            ./ "${USER}@${HOST}:${DEPLOYPATH}/"
+          ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no "${USER}@${HOST}" "cd ${DEPLOYPATH} && \
+            git pull && \
+            npm install && \
+            npm run prod && \
+            composer install --optimize-autoloader --no-interaction && \
+            ${PHP_CMD} artisan migrate --force && \
+            ${PHP_CMD} artisan optimize && \
+            ${PHP_CMD} artisan storage:link"
+
+      - name: Ensure ACL/group permissions on work dirs
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST_SERVER }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOYPATH: ${{ secrets.DEPLOY_PATH }}
+          SUDO_PASSWORD: ${{ secrets.DEPLOY_USER_PW_SUDO }}
+        run: |
+          SUDO_PASSWORD_B64="$(printf "%s" "${SUDO_PASSWORD}" | base64 | tr -d '\n')"
+          ssh -i "${HOME}/.ssh/deploy_key" -o StrictHostKeyChecking=no "${DEPLOY_USER}@${HOST}" "SUDO_PASSWORD_B64='${SUDO_PASSWORD_B64}' DEPLOYPATH='${DEPLOYPATH}' bash -lc '
+            SUDO_PASSWORD=\"\$(printf \"%s\" \"\$SUDO_PASSWORD_B64\" | base64 -d)\";
+            if [ ! -d \"\$DEPLOYPATH\" ]; then
+              echo \"Deploy path not found: \$DEPLOYPATH\";
+              exit 1;
+            fi;
+            echo \"Processing \$DEPLOYPATH\";
+            printf \"%s\n\" \"\$SUDO_PASSWORD\" | sudo -S -p \"\" setfacl -R -m g::rwx \"\$DEPLOYPATH\";
+            printf \"%s\n\" \"\$SUDO_PASSWORD\" | sudo -S -p \"\" setfacl -R -m d:g::rwx \"\$DEPLOYPATH\";
+            printf \"%s\n\" \"\$SUDO_PASSWORD\" | sudo -S -p \"\" chmod -R g+s \"\$DEPLOYPATH\";
+            unset SUDO_PASSWORD SUDO_PASSWORD_B64 DEPLOYPATH;
+          '"
+
+      - name: Restart PM2 (optional)
+        if: ${{ env.PM2_APP_NAME != '' }}
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST_SERVER }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          PM2_USER="${DEPLOY_USER}"
+          ssh -i "${HOME}/.ssh/deploy_key" -o StrictHostKeyChecking=no -o ConnectTimeout=10 "${PM2_USER}@${HOST}" \
+            "pm2 restart ${{ env.PM2_APP_NAME }}"
+
+      - name: Cleanup SSH keys
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
+
+      - name: Health check (optional)
+        if: ${{ env.HEALTH_CHECK_URL != '' }}
+        run: |
+          sleep 10
+          curl -fsS "${{ env.HEALTH_CHECK_URL }}" || echo "Cảnh báo: health check thất bại"

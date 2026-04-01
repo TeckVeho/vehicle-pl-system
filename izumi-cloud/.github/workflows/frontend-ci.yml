@@ -1,0 +1,68 @@
+name: Frontend CI
+
+on:
+  push:
+    branches:
+      - develop
+      - staging
+      - production
+    # Tạm comment: chỉ chạy FE CI khi có thay đổi file liên quan FE — bật lại sau khi ổn định test PR → develop.
+    # paths:
+    #   - 'resources/js/**'
+    #   - 'resources/sass/**'
+    #   - 'package.json'
+    #   - 'package-lock.json'
+    #   - 'webpack.mix.js'
+    #   - 'jest.config.js'
+    #   - 'babel.config.js'
+    #   - '.eslintrc.js'
+    #   - '.nvmrc'
+    #   - '.github/workflows/frontend-ci.yml'
+  pull_request:
+    # paths:
+    #   - 'resources/js/**'
+    #   - 'resources/sass/**'
+    #   - 'package.json'
+    #   - 'package-lock.json'
+    #   - 'webpack.mix.js'
+    #   - 'jest.config.js'
+    #   - 'babel.config.js'
+    #   - '.eslintrc.js'
+    #   - '.nvmrc'
+    #   - '.github/workflows/frontend-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  # Frontend: ESLint, Jest, Laravel Mix production build (#923).
+  # Backend / deploy: tách workflow riêng (vd. backend-ci.yml, deploy-ci-dev, deploy-ci-staging).
+  frontend:
+    name: Frontend (lint, test, build)
+    runs-on: ubuntu-latest
+    env:
+      MIX_LARAVEL_TEST_URL: http://127.0.0.1/
+      MIX_PUSHER_APP_KEY: ci-jest-placeholder
+      MIX_PUSHER_APP_CLUSTER: mt1
+      NODE_OPTIONS: --max-old-space-size=4096
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node from .nvmrc
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Jest
+        run: npm run test
+
+      - name: Laravel Mix production build
+        run: npm run production

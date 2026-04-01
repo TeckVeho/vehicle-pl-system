@@ -1,0 +1,116 @@
+# [機能名/修正名]
+コース先住所の追加
+
+## 1. 概要 (Overview)
+
+### 背景 (Background)
+
+* **現状の課題:** イズミクラウドのコースマスタには、コース先住所のデータがない
+
+* **ビジネス要求:** コースマスタにコース先住所を追加することで、ユーザーがコースの所在地を容易に確認できるようにする。
+
+* **ユーザーストーリー:** ユーザーとして、私はコースの住所を確認したい。
+
+### 達成目標 (Goal)
+* **あるべき姿:** コース住所の追加
+コースマスタに"コース先住所"データを追加する。
+
+* **完了条件 (Definition of Done):**
+    * [ ] コースマスタにコース先住所フィールドが追加されていること
+    * [ ] コース先住所が正しく保存され、表示されること
+    * [ ] 既存のデータに対してもコース先住所が適用されること
+    * [ ] ユーザーがコース先住所を更新できること
+    * [ ] テストが完了し、すべての要件が満たされていること
+
+---
+
+## 2. 仕様 (Specification)
+
+### 機能要件 (Functional Requirements)
+* コースマスタに新しいフィールド「コース先住所」を追加する。
+* ユーザーがコース先住所を入力した際、システムはその情報を正しく保存する。
+* コース先住所が表示される際、正しいフォーマットで表示されることを保証する。
+* ユーザーがコース先住所を更新した場合、システムはその変更を即座に反映する。
+* 既存のコースデータに対しても、コース先住所が適用されるようにする。
+
+### タスクタイプ
+要件
+
+### 添付ファイル
+
+
+### 参考資料
+-
+
+### メモ
+-
+
+### UI/UX (あれば)
+* **デザイン:**
+* **コンポーネント:**
+
+### 起票者
+Đào Thị Thư
+
+---
+
+# [Tên chức năng/Sửa đổi]
+Thêm địa chỉ đến của khóa học
+
+## 1. Tổng quan (Overview)
+
+### Bối cảnh (Background)
+
+* **Vấn đề hiện tại:** Dữ liệu địa chỉ đến của khóa học không có trong khóa học master của イズミクラウド.
+
+* **Yêu cầu kinh doanh:** Thêm địa chỉ đến của khóa học vào khóa học master để người dùng có thể dễ dàng xác nhận vị trí của khóa học.
+
+* **Câu chuyện người dùng:** Là một người dùng, tôi muốn xác nhận địa chỉ của khóa học.
+
+### Mục tiêu đạt được (Goal)
+* **Hình ảnh lý tưởng:** Thêm địa chỉ của khóa học
+Thêm dữ liệu "コース先住所 (địa chỉ đến của khóa học)" vào khóa học master.
+
+* **Điều kiện hoàn thành (Definition of Done):**
+    * [ ] Trường địa chỉ đến của khóa học đã được thêm vào khóa học master.
+    * [ ] Địa chỉ đến của khóa học được lưu trữ và hiển thị chính xác.
+    * [ ] Địa chỉ đến của khóa học cũng được áp dụng cho dữ liệu hiện có.
+    * [ ] Người dùng có thể cập nhật địa chỉ đến của khóa học.
+    * [ ] Kiểm tra đã hoàn tất và tất cả các yêu cầu đã được đáp ứng.
+
+---
+
+## 2. Thông số kỹ thuật (Specification)
+
+### Yêu cầu chức năng (Functional Requirements)
+* Thêm trường mới "コース先住所 (địa chỉ đến của khóa học)" vào khóa học master.
+* Khi người dùng nhập địa chỉ đến của khóa học, hệ thống sẽ lưu trữ thông tin đó một cách chính xác.
+* Đảm bảo địa chỉ đến của khóa học được hiển thị với định dạng chính xác khi hiển thị.
+* Khi người dùng cập nhật địa chỉ đến của khóa học, hệ thống sẽ phản ánh ngay lập tức sự thay đổi đó.
+* Đảm bảo địa chỉ đến của khóa học cũng được áp dụng cho dữ liệu khóa học hiện có.
+
+### Loại tác vụ
+Yêu cầu
+
+### Tài liệu đính kèm
+
+
+### Tài liệu tham khảo
+-
+
+### Ghi chú
+-
+
+### UI/UX (nếu có)
+* **Thiết kế:**
+* **Thành phần:**
+
+### Người khởi tạo
+Đào Thị Thư
+
+---
+
+## Implementation Tasks / 実装タスク
+
+- [ ] https://github.com/TeckVeho/Izumi_Issue-Requests-Repo/issues/848 (SP: 2)
+- [ ] https://github.com/TeckVeho/Izumi_Issue-Requests-Repo/issues/849 (SP: 3)

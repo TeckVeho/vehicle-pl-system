@@ -1,0 +1,27 @@
+<?php
+return [
+    'client_secret' => env('LW_CLIENT_SECRET'),
+    'client_id' => env('LW_CLIENT_ID'),
+    'scope' => env('LW_SCOPE', "bot"),
+    'response_type' => env('LW_RESPONSE_TYPE', "code"),
+    'state' => env('LW_STATE', "veho4649"),
+    'bot_id' => env('LW_BOT_ID'),
+    'channel_id' => env('LW_CHANNEL_ID'),
+    'app_url' => env('APP_URL'),
+    'service_account' => env('LW_SERVICE_ACCOUNT'),
+    'private_key_path' => env('LW_PRIVATE_KEY_PATH', './line_work_private_key.key'),
+    'client_secret_translate' => env('LW_CLIENT_SECRET_TRANSLATE'),
+    'client_id_translate' => env('LW_CLIENT_ID_TRANSLATE'),
+    'service_account_translate' => env('LW_SERVICE_ACCOUNT_TRANSLATE'),
+    'private_key_path_translate' => env('LW_PRIVATE_KEY_PATH_TRANSLATE', './line_work_private_key_translate.key'),
+    'bot_translate_id' => env('LW_BOT_TRANSLATE_ID'),
+    'channel_translate_id' => env('LW_CHANNEL_TRANSLATE_ID'),
+    'lw_bot_message' => env('LW_BOT_MESSAGE'),
+    'lw_bot_channel_message' => env('LW_BOT_CHANNEL_MESSAGE'),
+    'board_id_1' => env('LW_BOARD_ID_1'),
+    'board_id_2' => env('LW_BOARD_ID_2'),
+    'board_id_3' => env('LW_BOARD_ID_3'),
+    'scope_translate' => env('LW_SCOPE_TRANSLATE', "bot"),
+    'board_id' => env('LW_BOARD_ID'),
+    'board_post_line_break' => env('LW_BOARD_POST_LINE_BREAK', 'br')
+];

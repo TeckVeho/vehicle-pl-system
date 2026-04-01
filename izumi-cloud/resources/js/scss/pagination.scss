@@ -1,0 +1,32 @@
+.pagination {
+    .page-link {
+        background-color: $white;
+        color: $shark;
+        padding: .4rem .6rem;
+        font-weight: 500;
+        font-size: 15px;
+
+        &:hover {
+            background-color: $athens-gray;
+            border-color: $geyser;
+        }
+
+        &:focus {
+            box-shadow: none;
+        }
+    }
+
+    .page-item.disable {
+        color: $shark;
+    }
+
+    .page-item.active .page-link {
+        color: $white;
+        background: $tolopea;
+        border-color: $tolopea;
+    }
+}
+
+.b-pagination-pills .page-item .page-link {
+    border-radius: 4px !important;
+}

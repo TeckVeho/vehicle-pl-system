@@ -1,0 +1,31 @@
+diff --git a/resources/js/pages/VehicleMaster/detail.vue b/resources/js/pages/VehicleMaster/detail.vue
+index 808ea445..f6f8d0c8 100644
+--- a/resources/js/pages/VehicleMaster/detail.vue
++++ b/resources/js/pages/VehicleMaster/detail.vue
+@@ -625,7 +625,7 @@
+                                 </div>
+ 
+                                 <div class="card-two">
+-                                    <span>{{ handleRenderData('ElectCertPublishDateE') }}</span>
++                                    <span>{{ handleRenderData('GrantdateE') }}</span>
+                                     <!-- <span>{{ handleRenderData('created_at') }}</span> -->
+                                 </div>
+                             </b-col>
+@@ -1435,7 +1435,7 @@ export default {
+ 
+                 vehicle_inspection_cert: [],
+ 
+-                ElectCertPublishDateE: '',
++                GrantdateE: '',
+                 RegGrantDateE: '',
+                 FirstRegDateE: '',
+                 ValidPeriodExpDateE: '',
+@@ -1762,7 +1762,7 @@ export default {
+                     this.formData.vehicle_inspection_cert = DATA.vehicle_inspection_cert;
+ 
+                     for (let i = 0; i < DATA.vehicle_inspection_cert.length; i++) {
+-                        this.formData.vehicle_inspection_cert[i].ElectCertPublishDateE = `${this.handleRenderData('ElectCertPublishDateE')} ${this.handleRenderData('ElectCertPublishDateY')}年 ${this.handleRenderData('ElectCertPublishDateM')}月  ${this.handleRenderData('ElectCertPublishDateD')}日`;
++                        this.formData.vehicle_inspection_cert[i].GrantdateE = `${this.handleRenderData('GrantdateE')} ${this.handleRenderData('GrantdateY')}年 ${this.handleRenderData('GrantdateM')}月  ${this.handleRenderData('GrantdateD')}日`;
+ 
+                         this.formData.vehicle_inspection_cert[i].RegGrantDateE = `${this.handleRenderData('RegGrantDateE')} ${this.handleRenderData('RegGrantDateY')}年 ${this.handleRenderData('RegGrantDateM')}月  ${this.handleRenderData('RegGrantDateD')}日`;
+ 

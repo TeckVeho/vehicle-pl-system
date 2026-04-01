@@ -1,0 +1,9 @@
+apps:
+  - name: cloud-queue-worker
+    script: artisan
+    exec_mode: fork
+    interpreter: php82
+    instances: 1
+    args:
+      - queue:work
+      - --timeout=0

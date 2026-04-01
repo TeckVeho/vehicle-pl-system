@@ -1,0 +1,16 @@
+Related to https://github.com/TeckVeho/Izumi_Issue-Requests-Repo/issues/328
+・アプリ通知
+①アプリを開いた時に通知が来るので、アプリを開いていなくても、システムから送信したタイミングで通知するように変更
+②通知タイトルが「絵文字絵文字+災害通知+絵文字絵文字」となっているが、テキスト部分を　安否確認　へ変更
+・システム新規作成
+①メッセージ内容にデフォルトでテキストを入れておくことが可能か？（変更したい場合は変更でき、素早く送信したい場合はそのまま送信できるように）
+「皆様の安全を確認するため、安否報告をお願いします。」
+②新規内容送信後、「一覧に戻る」を選択し一覧に戻ると、今送った内容が反映されておらず、更新すると表示されるので、一覧戻った時に最新情報を読み込んで表示して欲しい
+
+・Phía IA
+① Hiện tại thông báo được gửi khi đã mở app, họ muốn chưa mở app thì noti cũng được gửi khi hệ thống gửi thông báo.
+② Hiện tại title đang là 「Emoji+災害通知+Emoji」, họ muốn thay đổi phần text thành "安否確認"
+・Phía WA
+① Set nội dung text mặc định khi tạo thông báo để gửi. Nếu muốn thay đổi nội dung thì vẫn thay đổi được, còn trong trường hợp gấp muốn gửi được nhanh thất thì có thể cứ thế gửi đi luôn ko cần mất thời gian nhập nội dung.
+Nội dung mặc định: 「皆様の安全を確認するため、安否報告をお願いします。」
+② Sau khi gửi thông báo, bấm 「一覧に戻る」 để quay lại màn hình list, thông báo vừa gửi đi đang không được hiển thị ở list mà phải reload thì mới hiển thị, họ muốn khi quay lại màn list sau khi tạo xong thì nó phải được hiển thị luôn.

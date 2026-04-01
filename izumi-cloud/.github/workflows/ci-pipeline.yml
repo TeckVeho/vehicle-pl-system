@@ -1,0 +1,135 @@
+name: CI Pipeline
+
+on:
+  pull_request:
+    branches: [develop, staging, main, master]
+  push:
+    branches: [develop, staging, main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PHP_VERSION: '8.2'
+  # FE: cố định Node 14 (Laravel Mix / toolchain hiện tại)
+  NODE_VERSION: '14.21.3'
+
+jobs:
+  php-tests:
+    name: PHP Tests (${{ matrix.test-suite }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        test-suite: [Unit, Feature]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: mbstring, exif, pcntl, bcmath, curl, xml, zip, intl, sqlite, pdo_sqlite
+          coverage: none
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.json') }}
+          restore-keys: |
+            composer-${{ runner.os }}-
+
+      - name: Install dependencies
+        env:
+          COMPOSER_AUTH: ${{ secrets.COMPOSER_AUTH }}
+        run: composer install --prefer-dist --no-progress --no-interaction --optimize-autoloader
+
+      - name: Prepare environment for testing
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+          php artisan jwt:secret --force
+          mkdir -p database
+          sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' .env
+          sed -i 's/^DB_DATABASE=.*/DB_DATABASE=:memory:/' .env
+          cp .env .env.testing
+
+      - name: Run ${{ matrix.test-suite }} tests
+        env:
+          APP_ENV: testing
+          # Không set DB_DATABASE ở đây: nếu set file sqlite chung, parallel workers sẽ corrupt DB
+        run: php artisan test --env=testing --parallel --testsuite=${{ matrix.test-suite }} --compact
+
+  # Tạm thời tắt Pint trên CI (bật lại: xóa if: false)
+  php-style:
+    if: false
+    name: PHP Style (Pint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: mbstring, exif, pcntl, bcmath, curl, xml, zip, intl, sqlite, pdo_sqlite
+          coverage: none
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.json') }}
+          restore-keys: |
+            composer-${{ runner.os }}-
+
+      - name: Install dependencies
+        env:
+          COMPOSER_AUTH: ${{ secrets.COMPOSER_AUTH }}
+        run: composer install --prefer-dist --no-progress --no-interaction --optimize-autoloader
+
+      - name: Laravel Pint (style)
+        run: vendor/bin/pint --test
+
+  node:
+    name: Node (ESLint, Jest, production build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # package-lock.json đang .gitignore → không dùng npm ci; cache theo package.json.
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
+      - name: Install frontend dependencies (npm)
+        run: npm install --no-audit --no-fund
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Jest
+        run: npm run test
+
+      - name: Production build (Laravel Mix)
+        run: npm run production
