@@ -2,6 +2,11 @@ import { Router, Request, Response } from "express";
 import bcrypt from "bcrypt";
 import { prisma } from "../lib/prisma.js";
 
+/** Detect if a string is already a bcrypt hash (IC sends pre-hashed passwords) */
+function isBcryptHash(value: string): boolean {
+  return /^\$2[aby]\$\d{2}\$.{53}$/.test(value);
+}
+
 // 有効な権限一覧（外部システム同期用）
 export const VALID_ROLES = [
   "CREW",
@@ -96,7 +101,7 @@ usersRouter.post("/", async (req: Request, res: Response) => {
     }
 
     const passwordHash = password
-      ? await bcrypt.hash(String(password), 10)
+      ? (isBcryptHash(String(password)) ? String(password) : await bcrypt.hash(String(password), 10))
       : await bcrypt.hash("changeme", 10);
 
     const data = {
@@ -207,7 +212,7 @@ usersRouter.post("/sync", async (req: Request, res: Response) => {
       if (!VALID_ROLES.includes(role)) continue;
 
       const passwordHash = password
-        ? await bcrypt.hash(String(password), 10)
+        ? (isBcryptHash(String(password)) ? String(password) : await bcrypt.hash(String(password), 10))
         : await bcrypt.hash("changeme", 10);
 
       const timestamps: Record<string, Date> = {};
