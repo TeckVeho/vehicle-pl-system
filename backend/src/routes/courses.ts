@@ -56,13 +56,20 @@ coursesRouter.post("/sync", requireRole(ROLES.MASTER), async (req: Request, res:
         externalId: externalId ? String(externalId).trim() : null,
       };
 
-      const existing = externalId
-        ? await prisma.course.findFirst({ where: { externalId: String(externalId) } })
-        : await prisma.course.findUnique({
-            where: {
-              locationId_code: { locationId: locId, code: codeStr },
-            },
-          });
+      // Prefer externalId; if missing in VPL but (locationId, code) exists (e.g. re-sync / IC id change), match by composite key to avoid P2002 on create.
+      let existing = null;
+      if (externalId) {
+        existing = await prisma.course.findFirst({
+          where: { externalId: String(externalId).trim() },
+        });
+      }
+      if (!existing) {
+        existing = await prisma.course.findUnique({
+          where: {
+            locationId_code: { locationId: locId, code: codeStr },
+          },
+        });
+      }
 
       if (existing) {
         const updated = await prisma.course.update({
