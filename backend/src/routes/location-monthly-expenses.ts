@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma.js";
 import { requireRole, ROLES } from "../lib/auth.js";
 import { runLocationExpenseAllocation } from "../lib/location-expense-allocation.js";
 import { LOCATION_EXPENSE_PRORATION_CODES } from "../lib/location-expense-proration.js";
+import { esc, generateCuid } from "../lib/sql-utils.js";
 
 export const locationMonthlyExpensesRouter = Router();
 
@@ -50,6 +51,7 @@ locationMonthlyExpensesRouter.post(
         return;
       }
 
+      // --- Batch fetch: account items (1 query) ---
       const validCodes = new Set(LOCATION_EXPENSE_PRORATION_CODES);
       const accountItems = await prisma.accountItem.findMany({
         where: { code: { in: Array.from(validCodes) } },
@@ -57,20 +59,35 @@ locationMonthlyExpensesRouter.post(
       });
       const accountByCode = new Map(accountItems.map((a) => [a.code, a]));
 
-      let upserted = 0;
+      // --- Batch fetch: all locations by code (1 query instead of N) ---
+      const lookupCodes = new Set<string>();
+      for (const e of expenses) {
+        if (!e.locationId && (e.departmentId || e.locationCode)) {
+          lookupCodes.add(String(e.departmentId ?? e.locationCode));
+        }
+      }
+      const locationsByCode = new Map<string, string>();
+      if (lookupCodes.size > 0) {
+        const locations = await prisma.location.findMany({
+          where: { code: { in: Array.from(lookupCodes) } },
+          select: { id: true, code: true },
+        });
+        for (const loc of locations) {
+          locationsByCode.set(loc.code, loc.id);
+        }
+      }
+
+      // --- Resolve all rows to (locationId, accountItemId, amount) ---
       const errors: string[] = [];
+      const rows: Array<{ locationId: string; accountItemId: string; amount: number }> = [];
 
       for (const e of expenses) {
         const { locationId, departmentId, locationCode, accountItemCode, amount } = e;
 
         let locId: string | null = locationId ? String(locationId) : null;
         if (!locId && (departmentId || locationCode)) {
-          const code = departmentId ?? locationCode;
-          const loc = await prisma.location.findUnique({
-            where: { code: String(code) },
-            select: { id: true },
-          });
-          locId = loc?.id ?? null;
+          const code = String(departmentId ?? locationCode);
+          locId = locationsByCode.get(code) ?? null;
         }
 
         const accountItem = accountByCode.get(String(accountItemCode));
@@ -89,23 +106,29 @@ locationMonthlyExpensesRouter.post(
         const amountVal =
           typeof amount === "number" ? amount : parseFloat(String(amount)) || 0;
 
-        await prisma.locationMonthlyExpense.upsert({
-          where: {
-            locationId_accountItemId_yearMonth: {
-              locationId: locId,
-              accountItemId: accountItem.id,
-              yearMonth,
-            },
-          },
-          create: {
-            locationId: locId,
-            accountItemId: accountItem.id,
-            yearMonth,
-            amount: amountVal,
-          },
-          update: { amount: amountVal },
-        });
-        upserted++;
+        rows.push({ locationId: locId, accountItemId: accountItem.id, amount: amountVal });
+      }
+
+      // --- Bulk upsert via raw SQL (1 query per chunk instead of N upserts) ---
+      let upserted = 0;
+      const CHUNK_SIZE = 500;
+      const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+
+      for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+        const chunk = rows.slice(i, i + CHUNK_SIZE);
+        const values = chunk
+          .map(
+            (r) =>
+              `(${esc(generateCuid())}, ${esc(r.locationId)}, ${esc(r.accountItemId)}, ${esc(yearMonth)}, ${r.amount}, '${now}', '${now}')`
+          )
+          .join(",\n");
+
+        await prisma.$executeRawUnsafe(`
+          INSERT INTO LocationMonthlyExpense (id, locationId, accountItemId, yearMonth, amount, createdAt, updatedAt)
+          VALUES ${values}
+          ON DUPLICATE KEY UPDATE amount = VALUES(amount), updatedAt = VALUES(updatedAt)
+        `);
+        upserted += chunk.length;
       }
 
       const allocationResult = await runLocationExpenseAllocation(yearMonth);
@@ -133,3 +156,4 @@ locationMonthlyExpensesRouter.post(
     }
   }
 );
+
