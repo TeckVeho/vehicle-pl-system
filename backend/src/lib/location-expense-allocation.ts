@@ -8,6 +8,7 @@
  */
 import { prisma } from "./prisma.js";
 import { LOCATION_EXPENSE_PRORATION_CODES } from "./location-expense-proration.js";
+import { esc, generateCuid } from "./sql-utils.js";
 
 export async function runLocationExpenseAllocation(
   yearMonth: string,
@@ -83,39 +84,38 @@ export async function runLocationExpenseAllocation(
     }
   }
 
-  let recordsUpdated = 0;
+  // Build all (vehicleId, accountItemId, yearMonth, amount) tuples for bulk upsert
+  const rows: Array<{ vehicleId: string; accountItemId: string; amount: number }> = [];
+
   for (const [vehicleId, itemMap] of Array.from(allocatedByVehicle.entries())) {
     for (const [accountItemId, amount] of Array.from(itemMap.entries())) {
-      const existing = await prisma.monthlyRecord.findUnique({
-        where: {
-          vehicleId_accountItemId_yearMonth: {
-            vehicleId,
-            accountItemId,
-            yearMonth,
-          },
-        },
-      });
-      const oldAmount = existing ? Number(existing.amount) : 0;
-      if (oldAmount === amount) continue;
-
-      await prisma.monthlyRecord.upsert({
-        where: {
-          vehicleId_accountItemId_yearMonth: {
-            vehicleId,
-            accountItemId,
-            yearMonth,
-          },
-        },
-        update: { amount },
-        create: {
-          vehicleId,
-          accountItemId,
-          yearMonth,
-          amount,
-        },
-      });
-      recordsUpdated++;
+      rows.push({ vehicleId, accountItemId, amount });
     }
+  }
+
+  // Bulk upsert via raw SQL in chunks (was ~17k individual Prisma upserts)
+  let recordsUpdated = 0;
+  const CHUNK_SIZE = 1000;
+  const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+
+  for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + CHUNK_SIZE);
+    const values = chunk
+      .map((r) => {
+        const id = generateCuid();
+        const vId = esc(r.vehicleId);
+        const aId = esc(r.accountItemId);
+        const ym = esc(yearMonth);
+        return `('${id}', ${vId}, ${aId}, ${ym}, ${r.amount}, '${now}', '${now}')`;
+      })
+      .join(",\n");
+
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO MonthlyRecord (id, vehicleId, accountItemId, yearMonth, amount, createdAt, updatedAt)
+      VALUES ${values}
+      ON DUPLICATE KEY UPDATE amount = VALUES(amount), updatedAt = VALUES(updatedAt)
+    `);
+    recordsUpdated += chunk.length;
   }
 
   return {
