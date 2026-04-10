@@ -8,12 +8,47 @@ import { esc, generateCuid } from "../lib/sql-utils.js";
 export const locationMonthlyExpensesRouter = Router();
 
 /**
+ * 拠点別月額経費の按分のみ実行する。
+ * sync で skipAllocation: true を使った後に呼ぶ。
+ *
+ * POST /api/location-monthly-expenses/allocate
+ * Body: { yearMonth: "2026-03" }
+ */
+locationMonthlyExpensesRouter.post(
+  "/allocate",
+  requireRole(ROLES.MASTER),
+  async (req: Request, res: Response) => {
+    try {
+      const { yearMonth } = req.body as { yearMonth: string };
+
+      if (!yearMonth || !/^\d{4}-\d{2}$/.test(yearMonth)) {
+        res.status(400).json({ error: "yearMonth (YYYY-MM) is required" });
+        return;
+      }
+
+      const allocationResult = await runLocationExpenseAllocation(yearMonth);
+
+      res.status(200).json({
+        success: true,
+        allocation: allocationResult,
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({
+        error: "Failed to allocate location monthly expenses",
+      });
+    }
+  }
+);
+
+/**
  * 外部システム連携用: 拠点別月額経費の一括同期（upsert）
- * 連携後、車両数で按分して MonthlyRecord を更新する。
+ * skipAllocation が未指定の場合、連携後に車両数で按分して MonthlyRecord を更新する。
  *
  * POST /api/location-monthly-expenses/sync
  * Body: {
  *   yearMonth: "2026-03",
+ *   skipAllocation?: boolean,
  *   expenses: [
  *     {
  *       locationId?: string,
@@ -30,8 +65,9 @@ locationMonthlyExpensesRouter.post(
   requireRole(ROLES.MASTER),
   async (req: Request, res: Response) => {
     try {
-      const { yearMonth, expenses } = req.body as {
+      const { yearMonth, expenses, skipAllocation } = req.body as {
         yearMonth: string;
+        skipAllocation?: boolean;
         expenses: Array<{
           locationId?: string;
           departmentId?: string;
@@ -131,7 +167,10 @@ locationMonthlyExpensesRouter.post(
         upserted += chunk.length;
       }
 
-      const allocationResult = await runLocationExpenseAllocation(yearMonth);
+      let allocationResult = null;
+      if (!skipAllocation) {
+        allocationResult = await runLocationExpenseAllocation(yearMonth);
+      }
 
       await prisma.dataSyncLog.create({
         data: {
@@ -145,7 +184,8 @@ locationMonthlyExpensesRouter.post(
       res.status(200).json({
         success: true,
         upserted,
-        allocation: allocationResult,
+        ...(allocationResult && { allocation: allocationResult }),
+        ...(skipAllocation && { allocationSkipped: true }),
         ...(errors.length > 0 && { errors }),
       });
     } catch (err) {
