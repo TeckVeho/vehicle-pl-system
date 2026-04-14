@@ -11,8 +11,6 @@ import {
 import { getPreviousYearMonth } from "../lib/salary-daily-proration.js";
 import { isLocationExpenseProrationAccount } from "../lib/location-expense-proration.js";
 import { getRevenueFromSpreadsheets } from "../lib/spreadsheet-revenue.js";
-import * as XLSX from "xlsx";
-
 /** 手入力専用（CSV/API一括登録不可）の勘定科目名 */
 const MANUAL_INPUT_ONLY_NAMES = ["その他", "不動産収入", "人材派遣収入"];
 
