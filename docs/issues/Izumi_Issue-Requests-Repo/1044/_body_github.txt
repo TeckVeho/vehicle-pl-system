@@ -1,0 +1,86 @@
+## 日本語 / Japanese
+
+### 親Issue
+Parent: #1010
+
+### 説明
+**vehicle-pl-system**（VPL）で ATMTC 由来データを **DailyDriverAssignment** / **DailyOperatingRecord** に反映し、**IC** から `VplClient` で呼べるようにする。親 plan.md §BE 1.6–1.9、実装順 3–4 に従う。**実装詳細・PM 確認済みの前提**は子 plan と PM 確認書に合わせる（下記 **Docs** リンク）。
+
+### 要件
+1. **VPL:** 新規 `POST /api/atmtc-transactions/sync`（`requireRole(ROLES.MASTER)`）、`index.ts` 登録。driver / vehicle 解決、assignment upsert、**1 行 = 1 run** で `runCount` を **車両×日**に集計→`DailyOperatingRecord`、**`runSalaryRunCountAllocation` のみ**（**`runDriverAllocation` は呼ばない** — PM B4.2 / timesheet フル配賦との二重計上回避）、`DataSyncLog`。未マッチ行は **スキップ**し **部分成功**（`errors[]` 等）— PM B2.1。
+2. **共通化:** `daily-operating.ts` の upsert ロジックを関数化し再利用。**B5.1:** `POST /daily-operating/sync` は **MASTER のみ**（全 caller が管理者）。必要なら B5.2 で別経路を PM が記載した場合のみルート分離。
+3. **IC:** `VplClient` に VPL 新エンドポイント向けメソッド。`atmtc_delivery_data_results`（または正規化済みペイロード）から VPL へ送信するジョブ／サービス。**マッピング**（`driver_code` 等→`externalId`）と **runCount 集計ルール**をコード化。**スキップ件**について **翌営業日前**に担当者へ件数・明細を通知できるようログ／通知設計（PM B2.1）。
+4. **`GET /api/daily-summary` の `runCount` 露出・UI 表示** — **本リリースではスコープ外**（PM B6.2）。突合は **DataSyncLog** を主とする。将来リリースで plan §1.5 / FE §1.2 を検討。
+5. **ユニットテスト:** VPL（該当ルート／lib）、IC（VplClient／マッピング）の範囲で PHPUnit / プロジェクト標準に準拠。
+
+### 技術詳細
+- VPL: `d:/CtyVeHo/izumi/vehicle-pl-system`（開発パス）
+- IC: `d:/CtyVeHo/izumi/cloud`
+- plan 親: `vehicle-pl-system/docs/issues/.../1010/plan.md`
+- plan #1044 / PM: `docs/issues/.../1044/plan.md`, `.../1044/pm-confirm-1044-vpl-atmtc-sync.md`
+
+### 受け入れ基準
+- [ ] 実装完了
+- [ ] ユニットテスト作成・合格
+- [ ] プロジェクト規約に準拠
+- [ ] 既存機能への破壊的変更なし
+
+### 依存関係
+- **ブロッキング:** 子 issue（IC `atmtc_delivery_data_results` 取込）でテーブルにデータが入ること（結合テスト時）。API 契約は先行実装可。
+
+---
+
+## Tiếng Việt / Vietnamese
+
+### Issue cha
+Parent: #1010
+
+### Mô tả
+Trên **vehicle-pl-system** (VPL), đồng bộ dữ liệu ATMTC vào **DailyDriverAssignment** / **DailyOperatingRecord**; phía **IC** gọi qua **`VplClient`**. Theo plan §BE 1.6–1.9 và thứ tự triển khai 3–4. **Chi tiết triển khai và các điều kiện đã PM chốt** phải khớp **plan #1044** và **phiếu PM** (link **Docs** bên dưới).
+
+### Yêu cầu
+1. **VPL:** Route mới `POST /api/atmtc-transactions/sync` (MASTER), đăng ký trong `index.ts`. Resolve driver/vehicle, upsert assignment; **mỗi dòng = 1 run**, gộp **theo xe × ngày** → `DailyOperatingRecord`; chỉ gọi **`runSalaryRunCountAllocation`** (**không** gọi **`runDriverAllocation`** — PM B4.2, tránh double-count với luồng timesheet); ghi `DataSyncLog`. Dòng không ghép được **bỏ qua**, phản hồi **thành công một phần** (ví dụ `errors[]`) — PM B2.1.
+2. **Tái sử dụng code:** Tách logic upsert từ `daily-operating.ts`. **B5.1 đã chốt:** `POST /daily-operating/sync` chỉ **MASTER**; mọi hệ thống gọi API đồng bộ nhóm này dùng tài khoản quản trị cao. Tách route chỉ khi PM ghi nhận ngoại lệ (B5.2).
+3. **IC:** Thêm method trên `VplClient` gọi API VPL mới; job/service đẩy dữ liệu từ `atmtc_delivery_data_results` (hoặc payload đã map). **Mapping** mã ATMTC → `externalId` và **quy tắc runCount** phải được code hóa. Với dòng bị skip: thiết kế **thông báo trước ngày làm việc tiếp theo** kèm số lượng và chi tiết — PM B2.1.
+4. **Mở rộng `GET /api/daily-summary` / UI hiển thị `runCount`** — **không** thuộc phạm vi release này (PM B6.2); đối soát qua **nhật ký đồng bộ**. Hạng mục sau này theo plan §1.5, FE §1.2.
+5. **Unit test:** Theo chuẩn từng repo (VPL backend, IC PHPUnit).
+
+### Chi tiết kỹ thuật
+- VPL: `d:/CtyVeHo/izumi/vehicle-pl-system`
+- IC: `d:/CtyVeHo/izumi/cloud`
+- Plan #1044 & phiếu PM: cùng thư mục docs issue 1044 trong repo `vehicle-pl-system` (xem **Docs**).
+
+### Tiêu chí chấp nhận
+- [ ] Hoàn thành triển khai
+- [ ] Tạo và pass unit tests
+- [ ] Tuân thủ quy ước
+- [ ] Không breaking change không cần thiết
+
+### Phụ thuộc
+- Nên có issue IC import (#1010 child BE-IC) với bảng đã có dữ liệu để integration test. API có thể implement song song.
+
+---
+
+## Implementation checklist
+
+- [ ] **VPL:** `POST /api/atmtc-transactions/sync` với `requireRole(ROLES.MASTER)`, đăng ký trong `index.ts`.
+- [ ] **VPL:** Resolve driver/vehicle, upsert assignment; **runCount** = tổng theo **xe × ngày** (quy tắc 1 dòng = 1 run — PM B1.1); **không** gọi `runDriverAllocation`, chỉ `runSalaryRunCountAllocation` + `DataSyncLog` (PM B4.2).
+- [ ] **VPL:** Dòng không resolve được: skip, trả **partial success** + `errors[]` (PM B2.1).
+- [ ] **VPL:** Refactor upsert từ `daily-operating.ts` thành hàm dùng lại; `POST /daily-operating/sync` đã **MASTER** (B5.1).
+- [ ] **IC:** Mở rộng `VplClient` + job/service từ `atmtc_delivery_data_results` (hoặc payload đã chuẩn hóa); mapping và quy tắc `runCount` trong code; cơ chế **thông báo** skip trước ngày làm việc tiếp theo (PM B2.1).
+- [ ] **(Sau release này)** `GET /api/daily-summary` / FE daily-summary — `runCount` (PM B6.2; hiện không bắt buộc).
+- [ ] **Tests:** Vitest (VPL routes/lib), PHPUnit (IC `VplClient` / mapping).
+- [ ] Đối chiếu `docs/issues/.../1010/plan.md` §BE 1.6–1.9, **1044/plan.md**, và **pm-confirm-1044-vpl-atmtc-sync.md**.
+
+---
+
+### Docs (repo TeckVeho/vehicle-pl-system, `main`)
+
+| Tài liệu | Link |
+|----------|------|
+| Implementation plan #1044 | https://github.com/TeckVeho/vehicle-pl-system/blob/main/docs/issues/Izumi_Issue-Requests-Repo/1044/plan.md |
+| PM confirm (VI) | https://github.com/TeckVeho/vehicle-pl-system/blob/main/docs/issues/Izumi_Issue-Requests-Repo/1044/pm-confirm-1044-vpl-atmtc-sync.md |
+| PM confirm (EN) | https://github.com/TeckVeho/vehicle-pl-system/blob/main/docs/issues/Izumi_Issue-Requests-Repo/1044/pm-confirm-1044-vpl-atmtc-sync.en.md |
+| Parent issue | https://github.com/TeckVeho/Izumi_Issue-Requests-Repo/issues/1010 |
+
+**Ghi chú:** Link file chỉ hoạt động sau khi các commit docs đã push lên `main` (hoặc sửa nhánh trong URL nếu dùng nhánh khác).

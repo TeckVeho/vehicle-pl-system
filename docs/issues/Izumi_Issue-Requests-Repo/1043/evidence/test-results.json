@@ -1,0 +1,13 @@
+{
+  "backend": {
+    "framework": "phpunit",
+    "command": "php artisan test --compact tests/Unit/AtmtcDeliveryExportRepositoryTest.php tests/Unit/AtmtcDeliveryExportServiceTest.php tests/Unit/AtmtcDataConnectionCsvStorageTest.php",
+    "tests_passed": 11,
+    "tests_failed": 0,
+    "assertions": 53,
+    "duration_seconds": 3.78,
+    "status": "SUCCESS",
+    "recorded_at": "2026-04-09T00:00:00Z",
+    "notes": "SQLite :memory:; Windows có thể hiện cảnh báo iconv, không fail test."
+  }
+}

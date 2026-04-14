@@ -1,0 +1,3 @@
+'workspace_root: .'
+'| `workspace_root` | `.` | Root repo chứa `.cursor` / docs workflow |'
+'| `tests_path` | *(trống)* | Chưa thấy `tests/` tiêu chuẩn tại root |'
