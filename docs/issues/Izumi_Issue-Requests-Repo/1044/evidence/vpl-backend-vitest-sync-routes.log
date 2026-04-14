@@ -1,0 +1,10 @@
+
+ RUN  v3.2.4 D:/CtyVeHo/izumi/vehicle-pl-system/backend
+
+ ✓ src/__tests__/sync-routes.contract.test.ts (43 tests) 208ms
+
+ Test Files  1 passed (1)
+      Tests  43 passed (43)
+   Start at  10:24:28
+   Duration  2.75s (transform 291ms, setup 0ms, collect 1.72s, tests 208ms, environment 0ms, prepare 521ms)
+

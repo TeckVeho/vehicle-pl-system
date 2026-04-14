@@ -1,0 +1,12 @@
+1	<=>	ATMTC	
+3	<=>	yokohama01	
+4	<=>	yokohama02	
+5	<=>	chiba01	
+6	<=>	oosaka01	
+7	<=>	musashino01	
+8	<=>	hamamatsu01	
+9	<=>	anjyou01	
+10	<=>	koube01	
+11	<=>	toyama01	
+12	<=>	koga01	
+13	<=>	tokorozawa01	

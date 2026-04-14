@@ -37,7 +37,12 @@ const { prismaMock } = vi.hoisted(() => ({
     },
     accountItem: { findMany: vi.fn() },
     driverMonthlyAmount: { upsert: vi.fn() },
-    dailyDriverAssignment: { findMany: vi.fn(), deleteMany: vi.fn(), createMany: vi.fn() },
+    dailyDriverAssignment: {
+      findMany: vi.fn(),
+      deleteMany: vi.fn(),
+      createMany: vi.fn(),
+      upsert: vi.fn(),
+    },
     dailyOperatingRecord: { upsert: vi.fn() },
     vehicleMonthlyCost: { findUnique: vi.fn(), upsert: vi.fn() },
     locationMonthlyExpense: { findMany: vi.fn() },
@@ -335,6 +340,29 @@ describe("sync route contracts", () => {
   // ── daily-operating/sync ──────────────────────────
 
   describe("POST /api/daily-operating/sync", () => {
+    it("returns 401 without auth", async () => {
+      const res = await request(app)
+        .post("/api/daily-operating/sync")
+        .send({ yearMonth: "2026-03", records: [] });
+      expect(res.status).toBe(401);
+    });
+
+    it("allows any authenticated role (route is not MASTER-gated)", async () => {
+      prismaMock.user.findUnique.mockResolvedValue({
+        id: "u3",
+        email: "u3@test.local",
+        name: "Crew",
+        role: "CREW",
+      });
+      const token = signToken("CREW", "u3");
+      const res = await request(app)
+        .post("/api/daily-operating/sync")
+        .set("Cookie", `auth-token=${token}`)
+        .send({ yearMonth: "2026-03", records: [] });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ success: true, upserted: 0 });
+    });
+
     it("returns 400 when yearMonth is missing", async () => {
       const token = masterToken();
       const res = await request(app)
@@ -381,6 +409,77 @@ describe("sync route contracts", () => {
         upserted: 0,
       });
       expect(res.body).toHaveProperty("salaryAllocation");
+    });
+  });
+
+  // ── atmtc-transactions/sync ───────────────────────
+
+  describe("POST /api/atmtc-transactions/sync", () => {
+    it("returns 401 without auth", async () => {
+      const res = await request(app)
+        .post("/api/atmtc-transactions/sync")
+        .send({ yearMonth: "2026-03", records: [] });
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 403 when role is not MASTER", async () => {
+      prismaMock.user.findUnique.mockResolvedValue({
+        id: "u3",
+        email: "u3@test.local",
+        name: "Crew",
+        role: "CREW",
+      });
+      const token = signToken("CREW", "u3");
+      const res = await request(app)
+        .post("/api/atmtc-transactions/sync")
+        .set("Cookie", `auth-token=${token}`)
+        .send({ yearMonth: "2026-03", records: [] });
+      expect(res.status).toBe(403);
+    });
+
+    it("returns 400 when yearMonth is missing", async () => {
+      const token = masterToken();
+      const res = await request(app)
+        .post("/api/atmtc-transactions/sync")
+        .set("Cookie", `auth-token=${token}`)
+        .send({ records: [] });
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({
+        error: "yearMonth and records array are required",
+      });
+    });
+
+    it("returns 400 when yearMonth is not YYYY-MM", async () => {
+      const token = masterToken();
+      const res = await request(app)
+        .post("/api/atmtc-transactions/sync")
+        .set("Cookie", `auth-token=${token}`)
+        .send({ yearMonth: "202603", records: [] });
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ error: "yearMonth must be YYYY-MM format" });
+    });
+
+    it("returns 200 for empty records", async () => {
+      const token = masterToken();
+      const res = await request(app)
+        .post("/api/atmtc-transactions/sync")
+        .set("Cookie", `auth-token=${token}`)
+        .send({ yearMonth: "2026-03", records: [] });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        success: true,
+        assignmentsUpserted: 0,
+        operatingUpserted: 0,
+      });
+      expect(res.body).toHaveProperty("salaryAllocation");
+      expect(prismaMock.dataSyncLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            syncType: "atmtc_transactions",
+            source: "ATMTC",
+          }),
+        })
+      );
     });
   });
 
