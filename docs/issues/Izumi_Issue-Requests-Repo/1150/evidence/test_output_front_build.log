@@ -1,0 +1,55 @@
+
+> vehicle-pl-system@0.1.0 build
+> next build
+
+   ▲ Next.js 15.5.15
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 14.0s
+   Linting and checking validity of types ...
+
+./src/components/income-statement/EditableCell.tsx
+62:6  Warning: React Hook useEffect has a missing dependency: 'startEditing'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/components/income-statement/PLTable.tsx
+196:6  Warning: React Hook useMemo has missing dependencies: 'getAmount', 'getCellValueFromComputed', and 'getCourseCellValueFromComputed'. Either include them or remove the dependency array.  react-hooks/exhaustive-deps
+
+info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/app/api-reference/config/eslint#disabling-rules
+   Collecting page data ...
+   Generating static pages (0/19) ...
+   Generating static pages (4/19) 
+   Generating static pages (9/19) 
+   Generating static pages (14/19) 
+ ✓ Generating static pages (19/19)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                 Size  First Load JS
+┌ ○ /                                      123 B         102 kB
+├ ○ /_not-found                            993 B         103 kB
+├ ○ /account-items                        8.6 kB         150 kB
+├ ○ /arbitrary-insurance                 5.08 kB         114 kB
+├ ○ /course-vehicle-mapping              3.41 kB         112 kB
+├ ○ /courses                             4.96 kB         147 kB
+├ ○ /daily-summary                        4.7 kB         142 kB
+├ ○ /dashboard                           4.31 kB         145 kB
+├ ○ /forbidden                           2.95 kB         115 kB
+├ ○ /icon.svg                                0 B            0 B
+├ ○ /import                              5.58 kB         143 kB
+├ ○ /income-statement                    12.1 kB         157 kB
+├ ○ /location-calculation-parameters     5.86 kB         143 kB
+├ ○ /locations                           5.89 kB         115 kB
+├ ○ /login                               3.45 kB         112 kB
+├ ○ /sync-logs                           4.08 kB         113 kB
+└ ○ /users                               4.91 kB         147 kB
++ First Load JS shared by all             102 kB
+  ├ chunks/255-4f212684648fcab9.js         46 kB
+  ├ chunks/4bd1b696-c023c6e3521b1417.js  54.2 kB
+  └ other shared chunks (total)             2 kB
+
+
+ƒ Middleware                             34.1 kB
+
+○  (Static)  prerendered as static content
+
+--- BUILD EXIT: 0 ---
