@@ -4,41 +4,34 @@
  * Prerequisites:
  * - GCP: Google Drive API enabled for the service account's project.
  * - Share the folder (or files) with the SA client_email as Viewer.
- * - Native Google Docs/Sheets/Slides are exercised via `files.export`, not `alt=media`.
  * - GOOGLE_SERVICE_ACCOUNT_JSON set (same as backend).
+ *
+ * The first file in the folder is downloaded as `.xlsx` via the shared
+ * `downloadDriveFileAsXlsxBuffer` helper (native Google Sheets are exported,
+ * uploaded `.xlsx` files use `alt=media`). Non-Sheets / non-`.xlsx` files
+ * still pass through `alt=media`, but the resulting buffer may not be a
+ * valid spreadsheet.
  *
  * Run from backend/:
  *   npx tsx --env-file=.env scripts/drive-folder-smoke.ts
  *   npx tsx --env-file=.env scripts/drive-folder-smoke.ts <OTHER_FOLDER_ID>
+ *   SMOKE_DRIVE_FOLDER_ID=<id> npx tsx --env-file=.env scripts/drive-folder-smoke.ts
  *
  * If `--env-file` is unsupported, export GOOGLE_SERVICE_ACCOUNT_JSON in the shell first.
  */
-import { getDriveClient } from "../src/lib/google-drive-client.js";
+import {
+  downloadDriveFileAsXlsxBuffer,
+  getDriveClient,
+} from "../src/lib/google-drive-client.js";
 
+/** Test folder used by the smoke script. Override with CLI arg or SMOKE_DRIVE_FOLDER_ID. */
 const DEFAULT_FOLDER = "1FFhlsFB90y-PrCVQCr3-ROLi5bcinTt5";
 
-const MIME_SHEETS = "application/vnd.google-apps.spreadsheet";
-const MIME_DOCS = "application/vnd.google-apps.document";
-const MIME_SLIDES = "application/vnd.google-apps.presentation";
-
-/** Google-native files cannot use `alt=media`; use `files.export` with a concrete MIME. */
-function exportMimeForGoogleWorkspace(
-  mimeType: string | null | undefined
-): string | null {
-  switch (mimeType) {
-    case MIME_SHEETS:
-      return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    case MIME_DOCS:
-      return "application/pdf";
-    case MIME_SLIDES:
-      return "application/pdf";
-    default:
-      return null;
-  }
-}
-
 async function main(): Promise<void> {
-  const folderId = process.argv[2]?.trim() || DEFAULT_FOLDER;
+  const folderId =
+    process.env.SMOKE_DRIVE_FOLDER_ID?.trim() ||
+    process.argv[2]?.trim() ||
+    DEFAULT_FOLDER;
   const drive = getDriveClient();
 
   const list = await drive.files.list({
@@ -52,7 +45,9 @@ async function main(): Promise<void> {
   const files = list.data.files ?? [];
   console.log(`Found ${files.length} item(s) in folder ${folderId}:\n`);
   for (const f of files) {
-    console.log(`- ${f.name}\n  id=${f.id} mime=${f.mimeType} size=${f.size ?? "n/a"}`);
+    console.log(
+      `- ${f.name}\n  id=${f.id} mime=${f.mimeType} size=${f.size ?? "n/a"}`
+    );
   }
 
   const firstWithId = files.find((f) => f.id);
@@ -61,26 +56,9 @@ async function main(): Promise<void> {
     return;
   }
 
-  const exportMime = exportMimeForGoogleWorkspace(firstWithId.mimeType);
-  const label = exportMime ? "Exporting" : "Downloading";
-  console.log(`\n${label} first file (${firstWithId.name})…`);
-
-  const media = exportMime
-    ? await drive.files.export(
-        { fileId: firstWithId.id, mimeType: exportMime },
-        { responseType: "arraybuffer" }
-      )
-    : await drive.files.get(
-        {
-          fileId: firstWithId.id,
-          alt: "media",
-          supportsAllDrives: true,
-        },
-        { responseType: "arraybuffer" }
-      );
-
-  const buf = media.data as ArrayBuffer;
-  console.log(`OK: ${buf.byteLength} bytes received (binary payload).`);
+  console.log(`\nDownloading first file (${firstWithId.name}) as .xlsx…`);
+  const buf = await downloadDriveFileAsXlsxBuffer(firstWithId.id);
+  console.log(`OK: ${buf.byteLength} bytes received (xlsx buffer).`);
 }
 
 main().catch((err) => {

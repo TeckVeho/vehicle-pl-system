@@ -1,8 +1,15 @@
 import { Router, Request, Response } from "express";
+import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
-import { requireRole, ROLES } from "../lib/auth.js";
+import { ROLES, requireRole } from "../lib/auth.js";
 
 export const locationsRouter = Router();
+
+const patchLocationBodySchema = z.object({
+  spreadsheetId: z.string().trim().min(1).nullable(),
+  spreadsheetRevenueSheet: z.string().trim().min(1).nullable().optional(),
+});
 
 locationsRouter.get("/", async (_req: Request, res: Response) => {
   const locations = await prisma.location.findMany({

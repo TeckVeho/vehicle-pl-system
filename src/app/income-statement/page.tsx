@@ -14,8 +14,9 @@ import { getCategoryLabel } from "@/lib/calc";
 import { fetchApi, getApiUrl } from "@/lib/api";
 import { useAuthStore, canEditPL } from "@/stores/authStore";
 
-const CACHE_KEY_PREFIX = "income-statement";
-const METADATA_CACHE_KEY_PREFIX = "income-statement:metadata";
+/** Bump when cache shape/API contract changes so stale empty payloads are dropped */
+const CACHE_KEY_PREFIX = "income-statement:v2";
+const METADATA_CACHE_KEY_PREFIX = "income-statement:metadata:v2";
 
 function getLocationCacheKey(yearMonth: string, locationId: string) {
   return `${CACHE_KEY_PREFIX}:${yearMonth}:${locationId}`;
@@ -84,6 +85,9 @@ interface Location {
   id: string;
   code: string;
   name: string;
+  spreadsheetId?: string | null;
+  /** e.g. 売上明細 / 車両別損益 — when workbook has no YYYY-MM tab */
+  spreadsheetRevenueSheet?: string | null;
 }
 
 interface Vehicle {
@@ -129,8 +133,12 @@ function IncomeStatementContent() {
   const [dataLoading, setDataLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   const loading = metadataLoading || dataLoading;
+
+  /** Legacy UI flag — backend now picks 売上明細 → 車両別損益 when no spreadsheetRevenueSheet */
+  const revenueSheetTabUnset = false;
 
   const handleDisplayModeChange = (mode: DisplayMode) => {
     setDisplayMode(mode);
@@ -177,7 +185,18 @@ function IncomeStatementContent() {
     }
 
     const res = await fetchApi(`/api/income-statement/metadata?yearMonth=${ym}`);
-    const data = await res.json();
+    let data: { locations?: Location[]; accountItems?: AccountItem[]; error?: string };
+    try {
+      data = (await res.json()) as typeof data;
+    } catch {
+      setApiError("メタデータの応答を解析できませんでした。");
+      return;
+    }
+    if (!res.ok) {
+      setApiError(data.error ?? `メタデータ取得に失敗しました（${res.status}）`);
+      return;
+    }
+    setApiError(null);
     setLocations(data.locations ?? []);
     setAccountItems(data.accountItems ?? []);
     writeMetadataCache(ym, {
@@ -196,7 +215,30 @@ function IncomeStatementContent() {
       try {
         const params = new URLSearchParams({ yearMonth: ym, locationId: locId });
         const res = await fetchApi(`/api/income-statement?${params}`);
-        const data = await res.json();
+        let data: {
+          vehicles?: Vehicle[];
+          records?: Record<string, number>;
+          lastUpdatedAt?: string | null;
+          error?: string;
+        };
+        try {
+          data = (await res.json()) as typeof data;
+        } catch {
+          setApiError("損益データの応答を解析できませんでした。");
+          return {
+            vehicles: [],
+            records: {},
+            lastUpdatedAt: null,
+          };
+        }
+        if (!res.ok) {
+          setApiError(data.error ?? `損益データの取得に失敗しました（${res.status}）`);
+          return {
+            vehicles: [],
+            records: {},
+            lastUpdatedAt: null,
+          };
+        }
 
         const result = {
           vehicles: data.vehicles ?? [],
@@ -210,6 +252,7 @@ function IncomeStatementContent() {
           lastUpdatedAt: result.lastUpdatedAt,
         });
 
+        setApiError(null);
         return result;
       } finally {
         if (!isRevalidate) setDataLoading(false);
@@ -443,6 +486,45 @@ function IncomeStatementContent() {
         <div className="mb-3 flex items-center gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800">
           <Pencil className="h-3.5 w-3.5 shrink-0" />
           <span>編集モード有効 — セルをクリックすると編集できます。Enterまたはタブキーで確定、Escapeでキャンセル。</span>
+        </div>
+      )}
+
+      {apiError && (
+        <div
+          className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          role="alert"
+        >
+          {apiError}
+        </div>
+      )}
+
+      {!apiError && revenueSheetTabUnset && locationId && (
+        <div className="mb-3 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950">
+          ブックに <code className="rounded bg-sky-100/90 px-1">YYYY-MM</code> 形式のタブが無い場合（例: 「損益計算資料」テンプレの
+          <code className="rounded bg-sky-100/90 px-1">売上明細</code>
+          または <code className="rounded bg-sky-100/90 px-1">車両別損益</code>
+          ）は、売上読み込み対象シートを
+          <code className="rounded bg-sky-100/90 px-1 ml-1">spreadsheetRevenueSheet</code>
+          で指定してください（Issue #1152 では <code className="rounded bg-sky-100/90 px-1">売上明細</code>）。
+          <span className="block mt-1 text-xs text-sky-900/90">
+            File không có sheet theo tháng (như{" "}
+            <code className="rounded bg-sky-100 px-1">2026-02</code>): gọi{" "}
+            <code className="rounded bg-sky-100 px-1">
+              PATCH /api/locations/:id
+            </code>{" "}
+            kèm <code className="rounded bg-sky-100 px-1">spreadsheetId</code>{" "}
+            và ví dụ{" "}
+            <code className="rounded bg-sky-100 px-1">&quot;spreadsheetRevenueSheet&quot;: &quot;売上明細&quot;</code>
+            （hoặc <code className="rounded bg-sky-100 px-1">車両別損益</code> tùy template）。
+            Filter tháng vẫn dùng <code className="rounded bg-sky-100 px-1">2026-02</code> như trong app (Không nhất
+            thiết trùng tên file *.2026.02).
+          </span>
+        </div>
+      )}
+
+      {!loading && !apiError && locationId && vehicles.length === 0 && locations.length > 0 && (
+        <div className="mb-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          選択中の拠点に車両が登録されていません。車両マスタまたは連携データを確認してください。
         </div>
       )}
 

@@ -36,8 +36,47 @@ model Location {
   drivers                     Driver[]
   monthlyExpenses             LocationMonthlyExpense[]
   calculationParameters       LocationCalculationParameter[]
+  driveSpreadsheetRevenueSyncMetas LocationDriveSyncMeta[]
+  driveSpreadsheetRevenueLines     DriveSpreadsheetRevenueLine[]
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
+}
+
+/// Snapshot metadata: one row per (拠点, 年月) after Google Drive 売上 workbook sync
+model LocationDriveSyncMeta {
+  id              String   @id @default(cuid())
+  locationId      String
+  location        Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  yearMonth       String // "YYYY-MM"
+  driveFileId     String // Drive file id used
+  revenueSheetTab String? // Tab name actually parsed
+  status          String // "success" | "failed"
+  errorMessage    String? @db.Text
+  syncedAt        DateTime
+  recordCount     Int      @default(0) // number of non-zero revenue cells written
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([locationId, yearMonth])
+  @@index([locationId, yearMonth])
+}
+
+/// Parsed 売上 cells from Drive snapshot (vehicle × revenue account); replaced wholesale on each successful sync
+model DriveSpreadsheetRevenueLine {
+  id            String      @id @default(cuid())
+  locationId    String
+  location      Location    @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  yearMonth     String
+  vehicleId     String
+  vehicle       Vehicle     @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  accountItemId String
+  accountItem   AccountItem @relation(fields: [accountItemId], references: [id], onDelete: Cascade)
+  amount        Float       @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([locationId, yearMonth, vehicleId, accountItemId])
+  @@index([locationId, yearMonth])
 }
 
 model Course {
@@ -69,6 +108,7 @@ model Vehicle {
   externalId            String?                // 外部システム連携用
   monthlyRecords        MonthlyRecord[]
   recordHistories       MonthlyRecordHistory[]
+  driveSpreadsheetRevenueLines DriveSpreadsheetRevenueLine[]
   dailyOperatingRecords DailyOperatingRecord[]
   dailyDriverAssignments DailyDriverAssignment[]
   monthlyCosts          VehicleMonthlyCost[]
@@ -201,6 +241,7 @@ model AccountItem {
   effectiveTo         String?        // 適用終了年月 "YYYY-MM"
   monthlyRecords      MonthlyRecord[]
   recordHistories     MonthlyRecordHistory[]
+  driveSpreadsheetRevenueLines DriveSpreadsheetRevenueLine[]
   driverMonthlyAmounts DriverMonthlyAmount[]
   locationMonthlyExpenses LocationMonthlyExpense[]
   createdAt           DateTime       @default(now())
