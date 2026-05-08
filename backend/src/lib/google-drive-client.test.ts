@@ -1,18 +1,31 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { googleAuthMock, driveFactoryMock, filesGetMock, filesExportMock } =
-  vi.hoisted(() => {
-    const googleAuthMock = vi.fn();
-    const filesGetMock = vi.fn();
-    const filesExportMock = vi.fn();
-    const driveFactoryMock = vi.fn(() => ({
-      files: {
-        get: filesGetMock,
-        export: filesExportMock,
-      },
-    }));
-    return { googleAuthMock, driveFactoryMock, filesGetMock, filesExportMock };
-  });
+const {
+  googleAuthMock,
+  driveFactoryMock,
+  filesGetMock,
+  filesExportMock,
+  filesListMock,
+} = vi.hoisted(() => {
+  const googleAuthMock = vi.fn();
+  const filesGetMock = vi.fn();
+  const filesExportMock = vi.fn();
+  const filesListMock = vi.fn();
+  const driveFactoryMock = vi.fn(() => ({
+    files: {
+      get: filesGetMock,
+      export: filesExportMock,
+      list: filesListMock,
+    },
+  }));
+  return {
+    googleAuthMock,
+    driveFactoryMock,
+    filesGetMock,
+    filesExportMock,
+    filesListMock,
+  };
+});
 
 vi.mock("googleapis", () => ({
   google: {
@@ -25,12 +38,34 @@ vi.mock("googleapis", () => ({
 import {
   downloadDriveFileAsXlsxBuffer,
   getDriveClient,
+  getGoogleDriveFolderIdFromEnv,
+  listSharedPlSpreadsheetFileRefs,
   MIME_GOOGLE_SHEETS,
   MIME_XLSX,
   resetGoogleDriveClientForTests,
 } from "./google-drive-client.js";
 
 const originalEnv = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+const savedDriveFolderUpper = process.env.GOOGLE_DRIVE_FOLDER_ID;
+const savedDriveFolderLower = process.env.google_drive_folder_id;
+
+function restoreDriveFolderEnv(): void {
+  if (savedDriveFolderUpper === undefined) {
+    delete process.env.GOOGLE_DRIVE_FOLDER_ID;
+  } else {
+    process.env.GOOGLE_DRIVE_FOLDER_ID = savedDriveFolderUpper;
+  }
+  if (savedDriveFolderLower === undefined) {
+    delete process.env.google_drive_folder_id;
+  } else {
+    process.env.google_drive_folder_id = savedDriveFolderLower;
+  }
+}
+
+function clearDriveFolderEnv(): void {
+  delete process.env.GOOGLE_DRIVE_FOLDER_ID;
+  delete process.env.google_drive_folder_id;
+}
 
 const minimalServiceAccountJson = JSON.stringify({
   type: "service_account",
@@ -47,6 +82,7 @@ describe("getDriveClient", () => {
     resetGoogleDriveClientForTests();
     vi.clearAllMocks();
     delete process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+    clearDriveFolderEnv();
   });
 
   afterEach(() => {
@@ -56,6 +92,7 @@ describe("getDriveClient", () => {
     } else {
       process.env.GOOGLE_SERVICE_ACCOUNT_JSON = originalEnv;
     }
+    restoreDriveFolderEnv();
   });
 
   it("throws when GOOGLE_SERVICE_ACCOUNT_JSON is not set", () => {
@@ -135,6 +172,7 @@ describe("downloadDriveFileAsXlsxBuffer", () => {
     resetGoogleDriveClientForTests();
     vi.clearAllMocks();
     process.env.GOOGLE_SERVICE_ACCOUNT_JSON = minimalServiceAccountJson;
+    clearDriveFolderEnv();
   });
 
   afterEach(() => {
@@ -144,6 +182,7 @@ describe("downloadDriveFileAsXlsxBuffer", () => {
     } else {
       process.env.GOOGLE_SERVICE_ACCOUNT_JSON = originalEnv;
     }
+    restoreDriveFolderEnv();
   });
 
   it("rejects empty fileId before hitting Drive", async () => {
@@ -208,5 +247,79 @@ describe("downloadDriveFileAsXlsxBuffer", () => {
     await expect(downloadDriveFileAsXlsxBuffer("file-3")).rejects.toThrow(
       "drive boom"
     );
+  });
+});
+
+describe("getGoogleDriveFolderIdFromEnv", () => {
+  beforeEach(() => {
+    clearDriveFolderEnv();
+  });
+
+  afterEach(() => {
+    restoreDriveFolderEnv();
+  });
+
+  it("returns undefined when unset or whitespace-only", () => {
+    expect(getGoogleDriveFolderIdFromEnv()).toBeUndefined();
+    process.env.GOOGLE_DRIVE_FOLDER_ID = "   ";
+    process.env.google_drive_folder_id = "   ";
+    expect(getGoogleDriveFolderIdFromEnv()).toBeUndefined();
+  });
+
+  it("returns trimmed id from google_drive_folder_id when upper unset", () => {
+    process.env.google_drive_folder_id = "  abcFolder123  ";
+    expect(getGoogleDriveFolderIdFromEnv()).toBe("abcFolder123");
+  });
+
+  it("prefers GOOGLE_DRIVE_FOLDER_ID over google_drive_folder_id", () => {
+    process.env.GOOGLE_DRIVE_FOLDER_ID = "upperId";
+    process.env.google_drive_folder_id = "lowerId";
+    expect(getGoogleDriveFolderIdFromEnv()).toBe("upperId");
+  });
+});
+
+describe("listSharedPlSpreadsheetFileRefs", () => {
+  beforeEach(() => {
+    resetGoogleDriveClientForTests();
+    vi.clearAllMocks();
+    process.env.GOOGLE_SERVICE_ACCOUNT_JSON = minimalServiceAccountJson;
+    clearDriveFolderEnv();
+  });
+
+  afterEach(() => {
+    resetGoogleDriveClientForTests();
+    if (originalEnv === undefined) {
+      delete process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+    } else {
+      process.env.GOOGLE_SERVICE_ACCOUNT_JSON = originalEnv;
+    }
+    restoreDriveFolderEnv();
+  });
+
+  it("returns empty list and skips Drive when no folder id configured", async () => {
+    const refs = await listSharedPlSpreadsheetFileRefs();
+
+    expect(refs).toEqual([]);
+    expect(filesListMock).not.toHaveBeenCalled();
+    expect(driveFactoryMock).not.toHaveBeenCalled();
+  });
+
+  it("lists direct children of folder when google_drive_folder_id is set", async () => {
+    process.env.google_drive_folder_id = "folderABC";
+    filesListMock.mockResolvedValueOnce({
+      data: { files: [{ id: "b", name: "損益計算資料_y" }], nextPageToken: null },
+    });
+
+    const refs = await listSharedPlSpreadsheetFileRefs();
+
+    expect(refs).toEqual([{ id: "b", name: "損益計算資料_y" }]);
+    expect(filesListMock).toHaveBeenCalledWith({
+      q: "'folderABC' in parents and trashed = false and name contains '損益計算資料'",
+      fields: "nextPageToken, files(id, name)",
+      pageSize: 100,
+      pageToken: undefined,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+    });
   });
 });

@@ -113,18 +113,20 @@ export interface DriveFileRef {
   name: string;
 }
 
-/**
- * Lists files visible to the service account (sharedWithMe) whose name contains
- * {@link DRIVE_PL_FILENAME_MARKER}. Paginates; does not throw on empty list.
- */
-export async function listSharedPlSpreadsheetFileRefs(): Promise<DriveFileRef[]> {
-  const drive = getDriveClient();
-  const marker = DRIVE_PL_FILENAME_MARKER.replace(/'/g, "\\'");
+/** Drive query string escape for values wrapped in single quotes. */
+function driveQueryLiteral(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+async function listDriveFilesByQuery(
+  drive: drive_v3.Drive,
+  q: string
+): Promise<DriveFileRef[]> {
   const out: DriveFileRef[] = [];
   let pageToken: string | undefined;
   do {
     const res = await drive.files.list({
-      q: `sharedWithMe = true and trashed = false and name contains '${marker}'`,
+      q,
       fields: "nextPageToken, files(id, name)",
       pageSize: 100,
       pageToken,
@@ -137,6 +139,37 @@ export async function listSharedPlSpreadsheetFileRefs(): Promise<DriveFileRef[]>
     pageToken = res.data.nextPageToken ?? undefined;
   } while (pageToken);
   return out;
+}
+
+/**
+ * Folder ID for 損益計算資料 workbook discovery. First non-whitespace wins:
+ * `GOOGLE_DRIVE_FOLDER_ID`, then `google_drive_folder_id`.
+ * Share that folder with the service account `client_email` as Viewer.
+ */
+export function getGoogleDriveFolderIdFromEnv(): string | undefined {
+  const upper = process.env.GOOGLE_DRIVE_FOLDER_ID?.trim();
+  const lower = process.env.google_drive_folder_id?.trim();
+  const v = upper || lower;
+  return v ? v : undefined;
+}
+
+/**
+ * Lists workbook files whose name contains {@link DRIVE_PL_FILENAME_MARKER}.
+ *
+ * **Requires** {@link getGoogleDriveFolderIdFromEnv} to be set: lists direct
+ * children of that folder only. Without a folder ID, returns an empty array
+ * (no Drive calls, no `sharedWithMe` fallback).
+ *
+ * Paginates when listing; never throws solely for “no folder”.
+ */
+export async function listSharedPlSpreadsheetFileRefs(): Promise<DriveFileRef[]> {
+  const folderId = getGoogleDriveFolderIdFromEnv();
+  if (!folderId) return [];
+
+  const drive = getDriveClient();
+  const marker = driveQueryLiteral(DRIVE_PL_FILENAME_MARKER);
+  const q = `'${driveQueryLiteral(folderId)}' in parents and trashed = false and name contains '${marker}'`;
+  return listDriveFilesByQuery(drive, q);
 }
 
 /** Test-only: clear the singleton between cases. */

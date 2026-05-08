@@ -24,7 +24,7 @@
  *
  * Never throws on failures → warns/logs → empty Map → callers render zeros.
  *
- * **Drive file:** Names contain `損益計算資料` (cf. PM / shared folder). If `Location.spreadsheetId` is empty, list `sharedWithMe` files matching that marker + **`Location.name`** + **`yearMonth`**, cache ~5 min. Default sheet: **`売上明細`** then **`車両別損益`** when both exist.
+ * **Drive file:** Names contain `損益計算資料`. Folder ID (`GOOGLE_DRIVE_FOLDER_ID` or `google_drive_folder_id`) is required for auto-discovery (direct children); no folder → no Drive list fallback. If `Location.spreadsheetId` is empty, match by marker + **`Location.name`** + **`yearMonth`**, cache ~5 min. Default sheet: **`売上明細`** then **`車両別損益`** when both exist.
  */
 
 import readXlsxFile, { readSheetNames } from "read-excel-file/node";
