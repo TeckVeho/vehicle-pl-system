@@ -13,6 +13,7 @@
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "drive:smoke": "tsx --env-file=.env scripts/drive-folder-smoke.ts",
+    "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
