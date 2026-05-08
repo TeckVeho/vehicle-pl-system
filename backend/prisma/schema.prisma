@@ -30,6 +30,7 @@ model Location {
   id                          String   @id @default(cuid())
   code                        String   @unique
   name                        String
+  spreadsheetId               String?  // 売上スプレッドシート連携用 Google Sheets ID（/d/{id}/ の部分）
   vehicles                    Vehicle[]
   courses                     Course[]
   drivers                     Driver[]
