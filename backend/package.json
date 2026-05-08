@@ -12,7 +12,7 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
-    "test": "vitest run",
+    "drive:smoke": "tsx --env-file=.env scripts/drive-folder-smoke.ts",
     "test:watch": "vitest"
   },
   "dependencies": {
@@ -21,6 +21,7 @@
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "express": "^4.21.0",
+    "googleapis": "^171.4.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^1.4.5-lts.1",
     "read-excel-file": "^5.8.8",
