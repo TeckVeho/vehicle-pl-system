@@ -86,7 +86,7 @@ interface Location {
   code: string;
   name: string;
   spreadsheetId?: string | null;
-  /** e.g. 売上明細 / 車両別損益 — when workbook has no YYYY-MM tab */
+  /** e.g. 売上明細 / 車両別損益 / YYYY-MM — backend default is 売上明細 → 車両別損益; set this to read another tab */
   spreadsheetRevenueSheet?: string | null;
 }
 

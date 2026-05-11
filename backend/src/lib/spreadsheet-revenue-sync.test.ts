@@ -50,7 +50,7 @@ describe("syncSpreadsheetRevenueForLocationYear", () => {
   it("writes lines and DataSyncLog on successful canonical sheet parse", async () => {
     prismaMock.location.findUnique.mockResolvedValue({
       spreadsheetId: "file-1",
-      spreadsheetRevenueSheet: null,
+      spreadsheetRevenueSheet: "2026-03",
       code: "LOC001",
       name: "Test",
     });

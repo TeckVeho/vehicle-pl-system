@@ -17,14 +17,13 @@
  * Data: column `A` = vehicle key (`18-16` style → resolved with `Location.code`).  
  * Amount per revenue account: cell under each block’s `月額` column.  
  * **`#ERROR!` / `#DIV/0!` cells** are read as **0** until fixed in the workbook (`parseAmount`).  
- * **Tab choice:** When `spreadsheetRevenueSheet` is unset: `YYYY-MM` / `YYYY.MM` tab if present, else **`売上明細`** (PM), else **`車両別損益`**. Set `spreadsheetRevenueSheet` to override.
+ * **Tab choice:** When `spreadsheetRevenueSheet` is unset: **`売上明細`**, else **`車両別損益`**. Set `spreadsheetRevenueSheet` to a tab name to override (e.g. canonical **`YYYY-MM`** / **`YYYY.MM`** sheet).
  *
- * Sheet picking (`spreadsheetRevenueSheet`): explicit Location.tab overrides calendar naming  
- * (`YYYY-MM`, then `YYYY.MM`). Caller-supplied `yearMonth` stays canonical internally (`YYYY-MM`).
+ * Sheet picking (`spreadsheetRevenueSheet`): explicit tab name when set; otherwise PM order above. Caller-supplied `yearMonth` stays canonical internally (`YYYY-MM`).
  *
  * Never throws on failures → warns/logs → empty Map → callers render zeros.
  *
- * **Drive file:** Names contain `損益計算資料`. Folder ID (`GOOGLE_DRIVE_FOLDER_ID` or `google_drive_folder_id`) is required for auto-discovery (direct children); no folder → no Drive list fallback. If `Location.spreadsheetId` is empty, match by marker + **`Location.name`** + **`yearMonth`**, cache ~5 min. Default sheet: **`売上明細`** then **`車両別損益`** when both exist.
+ * **Drive file:** Names contain `損益計算資料`. Folder ID (`GOOGLE_DRIVE_FOLDER_ID` or `google_drive_folder_id`) is required for auto-discovery (direct children); no folder → no Drive list fallback. If `Location.spreadsheetId` is empty, match by marker + **`Location.name`** + **`yearMonth`**, cache ~5 min. Default sheet: **`売上明細`** then **`車両別損益`** when both exist (`spreadsheetRevenueSheet` required to read a **`YYYY-MM`** / **`YYYY.MM`**-named tab automatically).
  */
 
 import readXlsxFile, { readSheetNames } from "read-excel-file/node";
@@ -181,19 +180,17 @@ async function resolvePlSpreadsheetFileFromSharedDrive(
 
 function pickRevenueWorkbookSheetName(
   sheetNames: string[],
-  yearMonth: string,
+  _yearMonth: string,
   configuredSheet: string | undefined
 ): string {
   const cfg = configuredSheet?.trim();
   if (cfg) {
-    return pickSheetName(sheetNames, yearMonth, cfg) ?? "";
+    return pickSheetNameExact(sheetNames, cfg) ?? "";
   }
-  const ymTab = pickSheetName(sheetNames, yearMonth, undefined);
-  if (ymTab) return ymTab;
   /** PM: 損益計算資料ブックの既定読み取りシートは「売上明細」。無い場合のみ「車両別損益」。 */
-  const urimei = pickSheetName(sheetNames, yearMonth, "売上明細");
+  const urimei = pickSheetNameExact(sheetNames, "売上明細");
   if (urimei) return urimei;
-  return pickSheetName(sheetNames, yearMonth, "車両別損益") ?? "";
+  return pickSheetNameExact(sheetNames, "車両別損益") ?? "";
 }
 
 function locDigitsFromLocationCode(
@@ -335,33 +332,11 @@ function cellString(cell: unknown): string {
   return String(cell).trim();
 }
 
-/** Alternate spreadsheet tabs commonly shipped beside yyyy-mm filenames (`YYYY.MM`). */
-function yearMonthTabCandidates(yearMonth: string): string[] {
-  const out: string[] = [];
-  if (!yearMonth.trim()) return out;
-  out.push(yearMonth.trim());
-  const dot = yearMonth.includes("-")
-    ? yearMonth.replace(/^(\d{4})-(\d{2})$/, "$1.$2")
-    : yearMonth;
-  if (!out.includes(dot)) out.push(dot);
-  return out;
-}
-
-function pickSheetName(
-  workbookSheets: string[],
-  yearMonth: string,
-  configuredSheet: string | undefined
-): string | null {
-  const trimmed = configuredSheet?.trim();
-  if (trimmed) {
-    const hit = workbookSheets.find((s) => s === trimmed);
-    return hit ?? null;
-  }
-  for (const cand of yearMonthTabCandidates(yearMonth)) {
-    const hit = workbookSheets.find((s) => s === cand);
-    if (hit) return hit;
-  }
-  return null;
+function pickSheetNameExact(workbookSheets: string[], sheetName: string): string | null {
+  const trimmed = sheetName.trim();
+  if (!trimmed) return null;
+  const hit = workbookSheets.find((s) => s === trimmed);
+  return hit ?? null;
 }
 
 function rowHasVehicleNoHeader(row: unknown[] | undefined): boolean {
@@ -856,19 +831,16 @@ async function downloadAndParseRevenueMapFromDrive(
     );
 
     if (!sheetName) {
-      const hints = [...yearMonthTabCandidates(yearMonth)].join(", ");
       const cfg = location?.spreadsheetRevenueSheet?.trim();
-      const fallbackHint = cfg ? "" : " + 売上明細/車両別損益";
+      const triedDesc = cfg ? `configured="${cfg}"` : "売上明細, 車両別損益";
       console.warn(
-        `[spreadsheet-revenue] no sheet resolved for "${yearMonth}" (tried: ${hints}${
-          cfg ? ` + configured="${cfg}"` : ""
-        }${fallbackHint}) in ${spreadsheetId}. Tabs: ${sheetNames.slice(0, 15).join(", ")}…`
+        `[spreadsheet-revenue] no sheet resolved for "${yearMonth}" (tried: ${triedDesc}) in ${spreadsheetId}. Tabs: ${sheetNames.slice(0, 15).join(", ")}…`
       );
       void logSpreadsheetRevenue("warn", "no sheet tab matched yearMonth / configured tab", {
         locationId,
         yearMonth,
         spreadsheetId,
-        tabCandidates: hints,
+        tabCandidates: cfg ? cfg : "売上明細|車両別損益",
         configuredSheet: cfg || null,
         autoResolvedDriveFile,
         tabSample: sheetNames.slice(0, 20).join("|"),
