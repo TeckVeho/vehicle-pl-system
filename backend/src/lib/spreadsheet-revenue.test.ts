@@ -127,7 +127,7 @@ describe("getRevenueFromSpreadsheets", () => {
   it("maps vehicleNo → vehicleId and account name → accountItemId with numeric amounts", async () => {
     prismaMock.location.findUnique.mockResolvedValue({
       spreadsheetId: "file-ok",
-      spreadsheetRevenueSheet: null,
+      spreadsheetRevenueSheet: "2026-03",
       code: null,
     });
     prismaMock.vehicle.findMany.mockResolvedValue([
@@ -157,7 +157,7 @@ describe("getRevenueFromSpreadsheets", () => {
   it('parses comma amounts like "1,500,000"', async () => {
     prismaMock.location.findUnique.mockResolvedValue({
       spreadsheetId: "file-csv",
-      spreadsheetRevenueSheet: null,
+      spreadsheetRevenueSheet: "2026-03",
       code: null,
     });
     prismaMock.vehicle.findMany.mockResolvedValue([
@@ -181,7 +181,7 @@ describe("getRevenueFromSpreadsheets", () => {
   it("skips rows whose vehicleNo is not mapped in DB", async () => {
     prismaMock.location.findUnique.mockResolvedValue({
       spreadsheetId: "file-skip",
-      spreadsheetRevenueSheet: null,
+      spreadsheetRevenueSheet: "2026-03",
       code: null,
     });
     prismaMock.vehicle.findMany.mockResolvedValue([
@@ -213,10 +213,10 @@ describe("getRevenueFromSpreadsheets", () => {
     expect(prismaMock.location.findUnique).not.toHaveBeenCalled();
   });
 
-  it("uses YYYY.MM tab when YYYY-MM tab is absent", async () => {
+  it("uses spreadsheetRevenueSheet to select a YYYY.MM-style tab", async () => {
     prismaMock.location.findUnique.mockResolvedValue({
       spreadsheetId: "file-dot",
-      spreadsheetRevenueSheet: null,
+      spreadsheetRevenueSheet: "2026.02",
       code: null,
     });
     prismaMock.vehicle.findMany.mockResolvedValue([

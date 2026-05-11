@@ -31,6 +31,7 @@ model Location {
   code                        String   @unique
   name                        String
   spreadsheetId               String?  // 売上スプレッドシート連携用 Google Sheets ID（/d/{id}/ の部分）
+  spreadsheetRevenueSheet     String?  // 売上ワークブック内のタブ名（未設定時は 売上明細 → 車両別損益。YYYY-MM 形式タブは明示指定）
   vehicles                    Vehicle[]
   courses                     Course[]
   drivers                     Driver[]
