@@ -47,7 +47,7 @@ const masterSubMenu = [
   { href: "/arbitrary-insurance", label: "任意保険マスタ", icon: Shield, roles: "MASTER" as const },
   { href: "/location-calculation-parameters", label: "拠点別計算パラメータ", icon: Settings2, roles: "MASTER" as const },
   { href: "/locations", label: "拠点スプレッドシート設定", icon: Database, roles: "MASTER" as const },
-  { href: "/course-vehicle-mapping", label: "コース・車両マッピング", icon: MapPin, roles: null },
+  // { href: "/course-vehicle-mapping", label: "コース・車両マッピング", icon: MapPin, roles: null },
 ];
 
 export function Header() {

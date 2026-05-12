@@ -10,7 +10,7 @@ import {
 } from "../lib/vehicle-costs.js";
 import { getPreviousYearMonth } from "../lib/salary-daily-proration.js";
 import { isLocationExpenseProrationAccount } from "../lib/location-expense-proration.js";
-import { getRevenueFromSpreadsheets } from "../lib/spreadsheet-revenue.js";
+
 /** 手入力専用（CSV/API一括登録不可）の勘定科目名 */
 const MANUAL_INPUT_ONLY_NAMES = ["その他", "不動産収入", "人材派遣収入"];
 
@@ -86,7 +86,7 @@ incomeStatementRouter.get("/", async (req: Request, res: Response) => {
   const vehicleIds = vehicles.map((v) => v.id);
   const prevYearMonth = getPreviousYearMonth(yearMonth);
 
-  const [records, prevMonthRecords, vehicleCosts, prevMonthVehicleCosts, locationExpenses, locationParams, accountItemsForCost] =
+  const [records, prevMonthRecords, vehicleCosts, prevMonthVehicleCosts, locationExpenses, locationParams, accountItemsForCost, driveRevenueLines] =
     await Promise.all([
       prisma.monthlyRecord.findMany({
         where: {
@@ -128,6 +128,13 @@ incomeStatementRouter.get("/", async (req: Request, res: Response) => {
       prisma.accountItem.findMany({
         where: accountItemEffectiveWhere(yearMonth),
         select: { id: true, code: true, category: true, name: true },
+      }),
+      // 売上データを DB スナップショットから直接取得（Google Drive を呼ばない）
+      prisma.driveSpreadsheetRevenueLine.findMany({
+        where: {
+          yearMonth,
+          locationId,
+        },
       }),
     ]);
 
@@ -237,18 +244,9 @@ incomeStatementRouter.get("/", async (req: Request, res: Response) => {
     }
   }
 
-  // 売上科目（手入力専用以外）は各拠点スプレッドシート参照のみ
-  const revenueAccountItemIds = Array.from(revenueFromSpreadsheetIds);
-  if (revenueAccountItemIds.length > 0) {
-    const spreadsheetRevenue = await getRevenueFromSpreadsheets({
-      locationId,
-      yearMonth,
-      vehicleIds: vehicles.map((v) => v.id),
-      revenueAccountItemIds,
-    });
-    spreadsheetRevenue.forEach((amount, key) => {
-      recordMap.set(key, amount);
-    });
+  // 売上科目（手入力専用以外）は DB スナップショットから取得（Google Drive を呼ばない）
+  for (const line of driveRevenueLines) {
+    recordMap.set(`${line.vehicleId}-${line.accountItemId}`, Number(line.amount));
   }
 
   res.json({
@@ -287,7 +285,7 @@ incomeStatementRouter.get("/export", async (req: Request, res: Response) => {
   const exportPrevYearMonth = getPreviousYearMonth(yearMonth);
 
   const locationIdsForExport = Array.from(new Set(vehicles.map((v) => v.locationId)));
-  const [accountItems, records, exportPrevMonthRecords, vehicleCosts, prevMonthVehicleCostsExport, locationExpensesForExport, locationParamsForExport] =
+  const [accountItems, records, exportPrevMonthRecords, vehicleCosts, prevMonthVehicleCostsExport, locationExpensesForExport, locationParamsForExport, exportDriveRevenueLines] =
     await Promise.all([
       prisma.accountItem.findMany({
         where: accountItemEffectiveWhere(yearMonth),
@@ -328,6 +326,13 @@ incomeStatementRouter.get("/export", async (req: Request, res: Response) => {
         where: {
           yearMonth: exportPrevYearMonth,
           locationId: { in: locationIdsForExport },
+        },
+      }),
+      // 売上データを DB スナップショットから直接取得（Google Drive を呼ばない）
+      prisma.driveSpreadsheetRevenueLine.findMany({
+        where: {
+          yearMonth,
+          ...(locationId ? { locationId } : { locationId: { in: locationIdsForExport } }),
         },
       }),
     ]);
@@ -433,24 +438,9 @@ incomeStatementRouter.get("/export", async (req: Request, res: Response) => {
     }
   }
 
-  // 売上科目（手入力専用以外）は各拠点スプレッドシート参照のみ
-  const exportRevenueAccountItemIds = Array.from(exportRevenueFromSpreadsheetIds);
-  if (exportRevenueAccountItemIds.length > 0) {
-    const locationIds = Array.from(new Set(vehicles.map((v) => v.locationId)));
-    for (const locId of locationIds) {
-      const locVehicleIds = vehicles
-        .filter((v) => v.locationId === locId)
-        .map((v) => v.id);
-      const spreadsheetRevenue = await getRevenueFromSpreadsheets({
-        locationId: locId,
-        yearMonth,
-        vehicleIds: locVehicleIds,
-        revenueAccountItemIds: exportRevenueAccountItemIds,
-      });
-      spreadsheetRevenue.forEach((amount, key) => {
-        recordMap.set(key, amount);
-      });
-    }
+  // 売上科目（手入力専用以外）は DB スナップショットから取得（Google Drive を呼ばない）
+  for (const line of exportDriveRevenueLines) {
+    recordMap.set(`${line.vehicleId}-${line.accountItemId}`, Number(line.amount));
   }
 
   const revenueIds = new Set(

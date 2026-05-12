@@ -13,6 +13,7 @@ import { Download, History, Pencil, PencilOff } from "lucide-react";
 import { getCategoryLabel } from "@/lib/calc";
 import { fetchApi, getApiUrl } from "@/lib/api";
 import { useAuthStore, canEditPL } from "@/stores/authStore";
+import { useYearMonthStore } from "@/stores/yearMonthStore";
 
 /** Bump when cache shape/API contract changes so stale empty payloads are dropped */
 const CACHE_KEY_PREFIX = "income-statement:v2";
@@ -117,12 +118,24 @@ function IncomeStatementContent() {
   const [accountItems, setAccountItems] = useState<AccountItem[]>([]);
   const [records, setRecords] = useState<Record<string, number>>({});
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
-  const [yearMonth, setYearMonth] = useState(() => {
+
+  // 年月は共有ストアを使用（ページ間で選択を保持）
+  const { yearMonth: storeYearMonth, setYearMonth: setStoreYearMonth } = useYearMonthStore();
+  const [yearMonth, setYearMonthLocal] = useState(() => {
     const fromUrl = searchParams.get("yearMonth");
-    if (fromUrl) return fromUrl;
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    if (fromUrl) {
+      // URL パラメータがあればストアも更新
+      setStoreYearMonth(fromUrl);
+      return fromUrl;
+    }
+    return storeYearMonth;
   });
+  // yearMonth 変更時にストアも同期
+  const setYearMonth = (ym: string) => {
+    setYearMonthLocal(ym);
+    setStoreYearMonth(ym);
+  };
+
   const [locationId, setLocationId] = useState<string | null>(() => {
     return searchParams.get("locationId");
   });
