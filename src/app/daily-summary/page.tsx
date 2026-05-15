@@ -13,7 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useYearMonthStore, getYears, getMonths, getMaxMonth } from "@/stores/yearMonthStore";
+import { useYearMonthStore, getMaxMonth } from "@/stores/yearMonthStore";
+import { YearMonthPicker } from "@/components/common/YearMonthPicker";
 
 interface Location {
   id: string;
@@ -138,34 +139,12 @@ function DailySummaryContent() {
       </div>
 
       <div className="flex flex-nowrap gap-5 items-center mb-6 overflow-x-auto">
-      <div className="flex items-center gap-2 shrink-0">
-          <span className="text-sm text-muted-foreground whitespace-nowrap">年</span>
-          <Select value={String(year)} onValueChange={handleYearChange}>
-            <SelectTrigger className="w-24">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {getYears().map((y) => (
-                <SelectItem key={y} value={String(y)}>
-                  {y}年
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span className="text-sm text-muted-foreground whitespace-nowrap">月</span>
-          <Select value={String(month)} onValueChange={handleMonthChange}>
-            <SelectTrigger className="w-20">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {getMonths(year).map((m) => (
-                <SelectItem key={m} value={String(m)}>
-                  {m}月
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <YearMonthPicker
+          year={year}
+          month={month}
+          onYearChange={(y) => handleYearChange(String(y))}
+          onMonthChange={(m) => handleMonthChange(String(m))}
+        />
       </div>
 
       <DailySummaryTable

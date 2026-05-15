@@ -7,6 +7,7 @@ import { useAuthStore, canManageMaster } from "@/stores/authStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Database, Loader2, CheckCircle2, CircleDashed, AlertCircle } from "lucide-react";
+import { YearMonthPicker } from "@/components/common/YearMonthPicker";
 
 interface Location {
   id: string;
@@ -185,13 +186,16 @@ export default function LocationsPage() {
   return (
     <div className="min-h-screen">
       <div className="mb-10">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <Database className="h-6 w-6" />
+        <div className="flex items-center justify-between gap-4 mb-2">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Database className="h-6 w-6" />
+            </div>
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+              拠点スプレッドシート設定
+            </h1>
           </div>
-          <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-            拠点スプレッドシート設定
-          </h1>
+          <YearMonthPicker />
         </div>
         <p className="text-[15px] text-muted-foreground ml-[60px] leading-relaxed">
           各拠点の売上データを参照する Google Sheets ID を設定します。
