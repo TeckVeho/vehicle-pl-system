@@ -23,9 +23,9 @@ import {
 import { LoadingOverlay } from "@/components/income-statement/LoadingOverlay";
 import {
   useYearMonthStore,
-  getYears,
-  getMonths,
 } from "@/stores/yearMonthStore";
+import { YearMonthPicker } from "@/components/common/YearMonthPicker";
+
 import { useAuthStore, canManageMaster } from "@/stores/authStore";
 
 interface LocationSummary {
@@ -152,8 +152,7 @@ export default function DashboardPage() {
     }
   };
 
-  const years = getYears();
-  const months = getMonths(year);
+
 
   if (loading && !data) {
     return <LoadingOverlay message="読み込み中" />;
@@ -165,32 +164,7 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-3xl font-bold tracking-tight">ダッシュボード</h1>
           <div className="flex items-center gap-2 shrink-0">
-            <span className="text-sm text-muted-foreground whitespace-nowrap">年</span>
-            <Select value={String(year)} onValueChange={(v) => setYear(Number(v))}>
-              <SelectTrigger className="w-24">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {years.map((y) => (
-                  <SelectItem key={y} value={String(y)}>
-                    {y}年
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <span className="text-sm text-muted-foreground whitespace-nowrap">月</span>
-            <Select value={String(month)} onValueChange={(v) => setMonth(Number(v))}>
-              <SelectTrigger className="w-20">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {months.map((m) => (
-                  <SelectItem key={m} value={String(m)}>
-                    {m}月
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <YearMonthPicker />
           </div>
         </div>
         <p className="text-muted-foreground">
@@ -251,36 +225,7 @@ export default function DashboardPage() {
             </button>
           )}
 
-          <span className="text-sm text-muted-foreground whitespace-nowrap">
-            年
-          </span>
-          <Select value={String(year)} onValueChange={(v) => setYear(Number(v))}>
-            <SelectTrigger className="w-24">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {years.map((y) => (
-                <SelectItem key={y} value={String(y)}>
-                  {y}年
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span className="text-sm text-muted-foreground whitespace-nowrap">
-            月
-          </span>
-          <Select value={String(month)} onValueChange={(v) => setMonth(Number(v))}>
-            <SelectTrigger className="w-20">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {months.map((m) => (
-                <SelectItem key={m} value={String(m)}>
-                  {m}月
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <YearMonthPicker />
         </div>
       </div>
 

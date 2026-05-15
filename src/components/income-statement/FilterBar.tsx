@@ -11,7 +11,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { DisplayMode } from "./PLTable";
-import { getYears, getMonths, getMaxMonth, parseYearMonth } from "@/stores/yearMonthStore";
+import { getMaxMonth, parseYearMonth } from "@/stores/yearMonthStore";
+import { YearMonthPicker } from "@/components/common/YearMonthPicker";
 
 interface FilterBarProps {
   yearMonth: string;
@@ -30,9 +31,7 @@ export function FilterBar({
   onSearchChange,
   onDisplayModeChange,
 }: FilterBarProps) {
-  const years = getYears();
   const { year, month } = parseYearMonth(yearMonth);
-  const months = getMonths(year);
 
   const handleYearChange = (v: string) => {
     const newYear = Number(v);
@@ -48,34 +47,12 @@ export function FilterBar({
 
   return (
     <div className="flex flex-nowrap gap-5 items-center mb-6 overflow-x-auto">
-      <div className="flex items-center gap-2 shrink-0">
-        <span className="text-sm text-muted-foreground whitespace-nowrap">年</span>
-        <Select value={String(year)} onValueChange={handleYearChange}>
-          <SelectTrigger className="w-24">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {years.map((y) => (
-              <SelectItem key={y} value={String(y)}>
-                {y}年
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <span className="text-sm text-muted-foreground whitespace-nowrap">月</span>
-        <Select value={String(month)} onValueChange={handleMonthChange}>
-          <SelectTrigger className="w-20">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {months.map((m) => (
-              <SelectItem key={m} value={String(m)}>
-                {m}月
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      <YearMonthPicker
+        year={year}
+        month={month}
+        onYearChange={(y) => handleYearChange(String(y))}
+        onMonthChange={(m) => handleMonthChange(String(m))}
+      />
       <div className="flex items-center gap-1 shrink-0">
         <span className="text-sm text-muted-foreground whitespace-nowrap">表示</span>
         <div className="flex rounded-md border border-input overflow-hidden">
