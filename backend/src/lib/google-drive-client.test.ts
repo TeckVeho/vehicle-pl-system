@@ -40,6 +40,7 @@ import {
   getDriveClient,
   getGoogleDriveFolderIdFromEnv,
   listSharedPlSpreadsheetFileRefs,
+  listSpreadsheetsInFolder,
   MIME_GOOGLE_SHEETS,
   MIME_XLSX,
   resetGoogleDriveClientForTests,
@@ -320,6 +321,92 @@ describe("listSharedPlSpreadsheetFileRefs", () => {
       pageToken: undefined,
       supportsAllDrives: true,
       includeItemsFromAllDrives: true,
+    });
+  });
+});
+
+describe("listSpreadsheetsInFolder", () => {
+  beforeEach(() => {
+    resetGoogleDriveClientForTests();
+    vi.clearAllMocks();
+    process.env.GOOGLE_SERVICE_ACCOUNT_JSON = minimalServiceAccountJson;
+    clearDriveFolderEnv();
+  });
+
+  afterEach(() => {
+    resetGoogleDriveClientForTests();
+    if (originalEnv === undefined) {
+      delete process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+    } else {
+      process.env.GOOGLE_SERVICE_ACCOUNT_JSON = originalEnv;
+    }
+    restoreDriveFolderEnv();
+  });
+
+  it("throws when folderId is empty", async () => {
+    await expect(listSpreadsheetsInFolder("  ")).rejects.toThrow(
+      "[google-drive] listSpreadsheetsInFolder: empty folderId"
+    );
+    expect(filesListMock).not.toHaveBeenCalled();
+  });
+
+  it("queries direct children with native Sheets and xlsx mimeType filter", async () => {
+    filesListMock.mockResolvedValueOnce({
+      data: {
+        files: [{ id: "s2", name: "B sheet" }, { id: "s1", name: "A sheet" }],
+        nextPageToken: null,
+      },
+    });
+
+    const refs = await listSpreadsheetsInFolder("folderXYZ");
+
+    expect(refs).toEqual([
+      { id: "s1", name: "A sheet" },
+      { id: "s2", name: "B sheet" },
+    ]);
+    expect(filesListMock).toHaveBeenCalledWith({
+      q: `'folderXYZ' in parents and trashed = false and (mimeType = '${MIME_GOOGLE_SHEETS}' or mimeType = '${MIME_XLSX}')`,
+      fields: "nextPageToken, files(id, name)",
+      pageSize: 100,
+      pageToken: undefined,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+    });
+  });
+
+  it("paginates across multiple pages", async () => {
+    filesListMock
+      .mockResolvedValueOnce({
+        data: {
+          files: [{ id: "p1", name: "Page 1" }],
+          nextPageToken: "token-2",
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          files: [{ id: "p2", name: "Page 2" }],
+          nextPageToken: null,
+        },
+      });
+
+    const refs = await listSpreadsheetsInFolder("folderPaginated");
+
+    expect(refs).toEqual([
+      { id: "p1", name: "Page 1" },
+      { id: "p2", name: "Page 2" },
+    ]);
+    expect(filesListMock).toHaveBeenCalledTimes(2);
+    expect(filesListMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ pageToken: "token-2" })
+    );
+  });
+
+  it("propagates Drive API errors", async () => {
+    filesListMock.mockRejectedValueOnce(Object.assign(new Error("forbidden"), { code: 403 }));
+
+    await expect(listSpreadsheetsInFolder("folderDenied")).rejects.toMatchObject({
+      code: 403,
     });
   });
 });

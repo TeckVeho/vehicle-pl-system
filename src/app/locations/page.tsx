@@ -3,10 +3,25 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { fetchApi } from "@/lib/api";
+import { extractFolderId } from "@/lib/google-drive-id";
 import { useAuthStore, canManageMaster } from "@/stores/authStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Database, Loader2, CheckCircle2, CircleDashed, AlertCircle } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Database,
+  Loader2,
+  CheckCircle2,
+  CircleDashed,
+  AlertCircle,
+  FolderOpen,
+} from "lucide-react";
 import { YearMonthPicker } from "@/components/common/YearMonthPicker";
 
 interface Location {
@@ -16,7 +31,13 @@ interface Location {
   spreadsheetId: string | null;
 }
 
+interface SpreadsheetRef {
+  id: string;
+  name: string;
+}
+
 type SaveState = "idle" | "saving" | "success" | "error";
+type FolderFetchState = "idle" | "loading" | "success" | "error";
 
 interface RowState {
   value: string;
@@ -24,12 +45,20 @@ interface RowState {
   errorMessage: string | null;
 }
 
+const SELECT_NONE = "__none__";
+
 function extractSheetId(input: string): string {
   const trimmed = input.trim();
-  // URLからIDを抽出 (https://docs.google.com/spreadsheets/d/{id}/...)
   const match = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
   if (match) return match[1];
   return trimmed;
+}
+
+function findSpreadsheetByLocationName(
+  spreadsheets: SpreadsheetRef[],
+  locationName: string
+): SpreadsheetRef | undefined {
+  return spreadsheets.find((s) => s.name.includes(locationName));
 }
 
 export default function LocationsPage() {
@@ -40,6 +69,18 @@ export default function LocationsPage() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [loading, setLoading] = useState(true);
   const [rowStates, setRowStates] = useState<Record<string, RowState>>({});
+
+  const [folderInput, setFolderInput] = useState("");
+  const [folderFetchState, setFolderFetchState] =
+    useState<FolderFetchState>("idle");
+  const [folderFetchError, setFolderFetchError] = useState<string | null>(null);
+  const [availableSpreadsheets, setAvailableSpreadsheets] = useState<
+    SpreadsheetRef[]
+  >([]);
+  const [manualInputRows, setManualInputRows] = useState<Record<string, boolean>>(
+    {}
+  );
+  const [suggestSummary, setSuggestSummary] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loadingAuth && user && !canManageMaster(user.role)) {
@@ -76,6 +117,76 @@ export default function LocationsPage() {
       ...prev,
       [locationId]: { ...prev[locationId], value, saveState: "idle", errorMessage: null },
     }));
+  };
+
+  const handleFetchSpreadsheets = async () => {
+    if (!canEdit) return;
+    const folderId = extractFolderId(folderInput);
+    if (!folderId) {
+      setFolderFetchState("error");
+      setFolderFetchError("フォルダ URL またはフォルダ ID を入力してください");
+      setAvailableSpreadsheets([]);
+      return;
+    }
+
+    setFolderFetchState("loading");
+    setFolderFetchError(null);
+    setSuggestSummary(null);
+
+    try {
+      const res = await fetchApi(
+        `/api/drive/spreadsheets?folderId=${encodeURIComponent(folderId)}`
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(
+          (err as { error?: string }).error ?? "一覧の取得に失敗しました"
+        );
+      }
+      const data = (await res.json()) as { spreadsheets: SpreadsheetRef[] };
+      setAvailableSpreadsheets(data.spreadsheets ?? []);
+      setFolderFetchState("success");
+      setManualInputRows({});
+    } catch (e) {
+      setAvailableSpreadsheets([]);
+      setFolderFetchState("error");
+      setFolderFetchError(
+        e instanceof Error ? e.message : "一覧の取得に失敗しました"
+      );
+    }
+  };
+
+  const handleSuggestByName = () => {
+    if (availableSpreadsheets.length === 0) return;
+    let suggested = 0;
+    let skipped = 0;
+
+    setRowStates((prev) => {
+      const next = { ...prev };
+      for (const loc of locations) {
+        const match = findSpreadsheetByLocationName(
+          availableSpreadsheets,
+          loc.name
+        );
+        if (match) {
+          next[loc.id] = {
+            ...next[loc.id],
+            value: match.id,
+            saveState: "idle",
+            errorMessage: null,
+          };
+          suggested++;
+        } else {
+          skipped++;
+        }
+      }
+      return next;
+    });
+
+    setManualInputRows({});
+    setSuggestSummary(
+      `${suggested} 拠点を提案しました。${skipped} 拠点は手動での設定が必要です。内容を確認してから各行の「保存」を押してください。`
+    );
   };
 
   const handleSave = async (locationId: string) => {
@@ -115,7 +226,6 @@ export default function LocationsPage() {
         },
       }));
 
-      // 3秒後にsuccess状態をリセット
       setTimeout(() => {
         setRowStates((prev) => ({
           ...prev,
@@ -183,6 +293,122 @@ export default function LocationsPage() {
     return currentExtracted !== (loc.spreadsheetId ?? null);
   };
 
+  const shouldUseDropdown = (locationId: string) =>
+    availableSpreadsheets.length > 0 && !manualInputRows[locationId];
+
+  const getOtherLocationsUsingSheet = (
+    locationId: string,
+    spreadsheetId: string
+  ): string[] => {
+    if (!spreadsheetId) return [];
+    return locations
+      .filter((l) => {
+        if (l.id === locationId) return false;
+        const otherValue = rowStates[l.id]?.value ?? "";
+        return extractSheetId(otherValue) === spreadsheetId;
+      })
+      .map((l) => l.name);
+  };
+
+  const renderSheetInput = (loc: Location) => {
+    const row = rowStates[loc.id];
+    const disabled = row?.saveState === "saving";
+
+    if (!canEdit) {
+      return (
+        <span className="font-mono text-sm text-foreground">
+          {loc.spreadsheetId ?? (
+            <span className="text-muted-foreground italic">未設定</span>
+          )}
+        </span>
+      );
+    }
+
+    if (shouldUseDropdown(loc.id)) {
+      const currentId = extractSheetId(row?.value ?? "");
+      const selectValue = currentId || SELECT_NONE;
+      const orphanId =
+        currentId &&
+        !availableSpreadsheets.some((s) => s.id === currentId)
+          ? currentId
+          : null;
+
+      return (
+        <div className="space-y-1">
+          <Select
+            value={selectValue}
+            onValueChange={(v) =>
+              handleValueChange(loc.id, v === SELECT_NONE ? "" : v)
+            }
+            disabled={disabled}
+          >
+            <SelectTrigger className="font-mono text-sm">
+              <SelectValue placeholder="スプレッドシートを選択" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={SELECT_NONE}>未選択</SelectItem>
+              {orphanId && (
+                <SelectItem value={orphanId}>
+                  （現在の設定）{orphanId}
+                </SelectItem>
+              )}
+              {availableSpreadsheets.map((s) => {
+                const usedBy = getOtherLocationsUsingSheet(loc.id, s.id);
+                const suffix =
+                  usedBy.length > 0
+                    ? `（${usedBy.join("、")} で使用中）`
+                    : "";
+                return (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                    {suffix}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+          <button
+            type="button"
+            className="text-xs text-primary hover:underline"
+            onClick={() =>
+              setManualInputRows((prev) => ({ ...prev, [loc.id]: true }))
+            }
+          >
+            手入力で設定
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-1">
+        <Input
+          type="text"
+          value={row?.value ?? ""}
+          onChange={(e) => handleValueChange(loc.id, e.target.value)}
+          placeholder="Sheets ID または Google Sheets URL を貼り付け"
+          className="font-mono text-sm"
+          disabled={disabled}
+        />
+        {availableSpreadsheets.length > 0 && (
+          <button
+            type="button"
+            className="text-xs text-primary hover:underline"
+            onClick={() =>
+              setManualInputRows((prev) => {
+                const next = { ...prev };
+                delete next[loc.id];
+                return next;
+              })
+            }
+          >
+            一覧から選択
+          </button>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen">
       <div className="mb-10">
@@ -198,10 +424,108 @@ export default function LocationsPage() {
           <YearMonthPicker />
         </div>
         <p className="text-[15px] text-muted-foreground ml-[60px] leading-relaxed">
-          各拠点の売上データを参照する Google Sheets ID を設定します。
-          URL（<code className="text-xs bg-muted px-1 py-0.5 rounded">https://docs.google.com/spreadsheets/d/...</code>）または Sheets ID をそのまま入力できます。
+          各拠点の売上データを参照する Google スプレッドシートを設定します。
+          Google Drive のフォルダをサービスアカウント（閲覧者）に共有したうえで、フォルダから一覧を取得して紐付けできます。
+          一覧を取得しない場合は、従来どおり Sheets の URL（
+          <code className="text-xs bg-muted px-1 py-0.5 rounded">
+            https://docs.google.com/spreadsheets/d/...
+          </code>
+          ）または file ID を直接入力できます。
         </p>
       </div>
+
+      {canEdit && (
+        <div className="mb-8 rounded-2xl border border-border bg-card p-5 shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <FolderOpen className="h-5 w-5 text-primary" />
+            <h2 className="text-base font-semibold text-foreground">
+              Drive フォルダから一覧取得
+            </h2>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            フォルダ URL（
+            <code className="text-xs bg-muted px-1 py-0.5 rounded">
+              https://drive.google.com/drive/folders/...
+            </code>
+            ）またはフォルダ ID を入力し、フォルダ内のスプレッドシート（Google シートおよび .xlsx）一覧を取得します。
+          </p>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-[240px]">
+              <Input
+                type="text"
+                value={folderInput}
+                onChange={(e) => {
+                  setFolderInput(e.target.value);
+                  if (folderFetchState === "error") {
+                    setFolderFetchState("idle");
+                    setFolderFetchError(null);
+                  }
+                }}
+                placeholder="Drive フォルダ URL またはフォルダ ID"
+                className="font-mono text-sm"
+                disabled={folderFetchState === "loading"}
+              />
+            </div>
+            <Button
+              onClick={handleFetchSpreadsheets}
+              disabled={folderFetchState === "loading" || !folderInput.trim()}
+            >
+              {folderFetchState === "loading" ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  取得中...
+                </>
+              ) : (
+                "一覧取得"
+              )}
+            </Button>
+            {folderFetchState === "success" && availableSpreadsheets.length > 0 && (
+              <Button variant="outline" onClick={handleSuggestByName}>
+                名前で自動提案
+              </Button>
+            )}
+          </div>
+
+          {folderFetchState === "error" && folderFetchError && (
+            <p className="text-sm text-destructive mt-3 flex items-center gap-1.5">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {folderFetchError}
+            </p>
+          )}
+
+          {suggestSummary && (
+            <p className="text-sm text-muted-foreground mt-3">{suggestSummary}</p>
+          )}
+
+          {folderFetchState === "success" && (
+            <div className="mt-4 text-sm text-foreground">
+              <p className="font-medium">
+                {availableSpreadsheets.length} 件のスプレッドシートを取得しました
+              </p>
+              {availableSpreadsheets.length > 0 && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+                    取得一覧を表示
+                  </summary>
+                  <ul className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-border divide-y divide-border/60">
+                    {availableSpreadsheets.map((s) => (
+                      <li
+                        key={s.id}
+                        className="px-3 py-2 flex flex-wrap gap-x-3 gap-y-0.5"
+                      >
+                        <span className="font-medium">{s.name}</span>
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {s.id}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center gap-3 py-12 text-muted-foreground">
@@ -221,7 +545,7 @@ export default function LocationsPage() {
                   拠点
                 </th>
                 <th className="px-5 py-4 text-left text-sm font-semibold text-foreground">
-                  Sheets ID / URL
+                  スプレッドシート
                 </th>
                 <th className="px-5 py-4 text-left text-sm font-semibold text-foreground w-[120px]">
                   状態
@@ -248,22 +572,7 @@ export default function LocationsPage() {
                       {loc.name}
                     </td>
                     <td className="px-5 py-3">
-                      {canEdit ? (
-                        <Input
-                          type="text"
-                          value={row?.value ?? ""}
-                          onChange={(e) => handleValueChange(loc.id, e.target.value)}
-                          placeholder="Sheets ID または Google Sheets URL を貼り付け"
-                          className="font-mono text-sm"
-                          disabled={row?.saveState === "saving"}
-                        />
-                      ) : (
-                        <span className="font-mono text-sm text-foreground">
-                          {loc.spreadsheetId ?? (
-                            <span className="text-muted-foreground italic">未設定</span>
-                          )}
-                        </span>
-                      )}
+                      {renderSheetInput(loc)}
                       {row?.saveState === "error" && row.errorMessage && (
                         <p className="text-xs text-destructive mt-1 flex items-center gap-1">
                           <AlertCircle className="h-3 w-3 shrink-0" />

@@ -21,6 +21,7 @@ import { coursesRouter } from "./courses.js";
 import { usersRouter } from "./users.js";
 import { syncLogsRouter } from "./sync-logs.js";
 import { spreadsheetRevenueRouter } from "./spreadsheet-revenue.js";
+import { driveRouter } from "./drive.js";
 
 export const apiRouter = Router();
 
@@ -51,4 +52,5 @@ apiRouter.use("/locations", locationsRouter);
 apiRouter.use("/import", requireRole(ROLES.EDIT_PL), importRouter);
 apiRouter.use("/courses", coursesRouter); // 権限チェックは courses 内で実施
 apiRouter.use("/spreadsheet-revenue", requireRole(ROLES.MASTER), spreadsheetRevenueRouter);
+apiRouter.use("/drive", requireRole(ROLES.MASTER), driveRouter);
 apiRouter.use("/sync-logs", syncLogsRouter);
