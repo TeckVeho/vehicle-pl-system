@@ -15,6 +15,7 @@
  * Run from backend/:
  *   npx tsx --env-file=.env scripts/drive-folder-smoke.ts
  *   npx tsx --env-file=.env scripts/drive-folder-smoke.ts <OTHER_FOLDER_ID>
+ *   npx tsx --env-file=.env scripts/drive-folder-smoke.ts --spreadsheets-only <FOLDER_ID>
  *   SMOKE_DRIVE_FOLDER_ID=<id> npx tsx --env-file=.env scripts/drive-folder-smoke.ts
  *
  * If `--env-file` is unsupported, export GOOGLE_SERVICE_ACCOUNT_JSON in the shell first.
@@ -22,16 +23,36 @@
 import {
   downloadDriveFileAsXlsxBuffer,
   getDriveClient,
+  listSpreadsheetsInFolder,
 } from "../src/lib/google-drive-client.js";
 
 /** Test folder used by the smoke script. Override with CLI arg or SMOKE_DRIVE_FOLDER_ID. */
 const DEFAULT_FOLDER = "1FFhlsFB90y-PrCVQCr3-ROLi5bcinTt5";
 
-async function main(): Promise<void> {
+function parseArgs(argv: string[]): { folderId: string; spreadsheetsOnly: boolean } {
+  const spreadsheetsOnly = argv.includes("--spreadsheets-only");
+  const positional = argv.filter((arg) => arg !== "--spreadsheets-only");
   const folderId =
     process.env.SMOKE_DRIVE_FOLDER_ID?.trim() ||
-    process.argv[2]?.trim() ||
+    positional[2]?.trim() ||
     DEFAULT_FOLDER;
+  return { folderId, spreadsheetsOnly };
+}
+
+async function main(): Promise<void> {
+  const { folderId, spreadsheetsOnly } = parseArgs(process.argv);
+
+  if (spreadsheetsOnly) {
+    const spreadsheets = await listSpreadsheetsInFolder(folderId);
+    console.log(
+      `Found ${spreadsheets.length} spreadsheet(s) in folder ${folderId}:\n`
+    );
+    for (const s of spreadsheets) {
+      console.log(`- ${s.name}\n  id=${s.id}`);
+    }
+    return;
+  }
+
   const drive = getDriveClient();
 
   const list = await drive.files.list({

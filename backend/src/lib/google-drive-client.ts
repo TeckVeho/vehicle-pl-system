@@ -172,6 +172,26 @@ export async function listSharedPlSpreadsheetFileRefs(): Promise<DriveFileRef[]>
   return listDriveFilesByQuery(drive, q);
 }
 
+/**
+ * Lists spreadsheet files that are direct children of `folderId`:
+ * native Google Sheets and uploaded `.xlsx` (both supported by
+ * {@link downloadDriveFileAsXlsxBuffer}). Results are sorted by name ascending.
+ */
+export async function listSpreadsheetsInFolder(
+  folderId: string
+): Promise<DriveFileRef[]> {
+  if (!folderId?.trim()) {
+    throw new Error("[google-drive] listSpreadsheetsInFolder: empty folderId");
+  }
+
+  const drive = getDriveClient();
+  const parent = driveQueryLiteral(folderId.trim());
+  const q = `'${parent}' in parents and trashed = false and (mimeType = '${MIME_GOOGLE_SHEETS}' or mimeType = '${MIME_XLSX}')`;
+  const refs = await listDriveFilesByQuery(drive, q);
+  refs.sort((a, b) => a.name.localeCompare(b.name, "ja"));
+  return refs;
+}
+
 /** Test-only: clear the singleton between cases. */
 export function resetGoogleDriveClientForTests(): void {
   driveClient = null;
