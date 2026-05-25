@@ -1,19 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { fetchApi } from "@/lib/api";
 import { extractFolderId } from "@/lib/google-drive-id";
 import { useAuthStore, canManageMaster } from "@/stores/authStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Database,
   Loader2,
@@ -23,6 +16,12 @@ import {
   FolderOpen,
 } from "lucide-react";
 import { YearMonthPicker } from "@/components/common/YearMonthPicker";
+import { useYearMonthStore } from "@/stores/yearMonthStore";
+import { findSpreadsheetForLocation } from "@/lib/spreadsheet-file-match";
+import {
+  loadLocationsDriveCache,
+  saveLocationsDriveCache,
+} from "@/lib/locations-drive-cache";
 
 interface Location {
   id: string;
@@ -36,39 +35,26 @@ interface SpreadsheetRef {
   name: string;
 }
 
-type SaveState = "idle" | "saving" | "success" | "error";
-type FolderFetchState = "idle" | "loading" | "success" | "error";
+type SyncState = "idle" | "syncing" | "success" | "error" | "unmatched";
 
-interface RowState {
-  value: string;
-  saveState: SaveState;
+interface RowSyncState {
+  status: SyncState;
   errorMessage: string | null;
+  matchedFileName: string | null;
+  matchedFileId: string | null;
 }
 
-const SELECT_NONE = "__none__";
-
-function extractSheetId(input: string): string {
-  const trimmed = input.trim();
-  const match = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-  if (match) return match[1];
-  return trimmed;
-}
-
-function findSpreadsheetByLocationName(
-  spreadsheets: SpreadsheetRef[],
-  locationName: string
-): SpreadsheetRef | undefined {
-  return spreadsheets.find((s) => s.name.includes(locationName));
-}
+type FolderFetchState = "idle" | "loading" | "success" | "error";
 
 export default function LocationsPage() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const loadingAuth = useAuthStore((s) => s.loading);
   const canEdit = user ? canManageMaster(user.role) : false;
+  const yearMonth = useYearMonthStore((s) => s.yearMonth);
   const [locations, setLocations] = useState<Location[]>([]);
   const [loading, setLoading] = useState(true);
-  const [rowStates, setRowStates] = useState<Record<string, RowState>>({});
+  const [rowStates, setRowStates] = useState<Record<string, RowSyncState>>({});
 
   const [folderInput, setFolderInput] = useState("");
   const [folderFetchState, setFolderFetchState] =
@@ -77,10 +63,7 @@ export default function LocationsPage() {
   const [availableSpreadsheets, setAvailableSpreadsheets] = useState<
     SpreadsheetRef[]
   >([]);
-  const [manualInputRows, setManualInputRows] = useState<Record<string, boolean>>(
-    {}
-  );
-  const [suggestSummary, setSuggestSummary] = useState<string | null>(null);
+  const [syncSummary, setSyncSummary] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loadingAuth && user && !canManageMaster(user.role)) {
@@ -88,36 +71,228 @@ export default function LocationsPage() {
     }
   }, [user, loadingAuth, router]);
 
+  const initRowStates = useCallback((locs: Location[]) => {
+    const states: Record<string, RowSyncState> = {};
+    for (const loc of locs) {
+      states[loc.id] = {
+        status: "idle",
+        errorMessage: null,
+        matchedFileName: null,
+        matchedFileId: null,
+      };
+    }
+    setRowStates(states);
+  }, []);
+
   const fetchLocations = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetchApi("/api/locations");
       const data: Location[] = await res.json();
       setLocations(data);
-      const states: Record<string, RowState> = {};
-      for (const loc of data) {
-        states[loc.id] = {
-          value: loc.spreadsheetId ?? "",
-          saveState: "idle",
-          errorMessage: null,
-        };
-      }
-      setRowStates(states);
+      initRowStates(data);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [initRowStates]);
 
   useEffect(() => {
     fetchLocations();
   }, [fetchLocations]);
 
-  const handleValueChange = (locationId: string, value: string) => {
-    setRowStates((prev) => ({
-      ...prev,
-      [locationId]: { ...prev[locationId], value, saveState: "idle", errorMessage: null },
-    }));
+  const persistSpreadsheetId = async (
+    locationId: string,
+    sheetId: string | null
+  ): Promise<Location> => {
+    const res = await fetchApi(`/api/locations/${locationId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ spreadsheetId: sheetId }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error((err as { error?: string }).error ?? "保存に失敗しました");
+    }
+    return res.json() as Promise<Location>;
   };
+
+  const matchForLocation = useCallback(
+    (loc: Location, spreadsheets: SpreadsheetRef[]) =>
+      findSpreadsheetForLocation(spreadsheets, loc.name, yearMonth),
+    [yearMonth]
+  );
+
+  const applyPreviewForYearMonth = useCallback(
+    (spreadsheets: SpreadsheetRef[]) => {
+      setRowStates((prev) => {
+        const next = { ...prev };
+        for (const loc of locations) {
+          const match = matchForLocation(loc, spreadsheets);
+          next[loc.id] = {
+            status: match ? "idle" : "unmatched",
+            errorMessage: null,
+            matchedFileName: match?.name ?? null,
+            matchedFileId: match?.id ?? null,
+          };
+        }
+        return next;
+      });
+    },
+    [locations, matchForLocation]
+  );
+
+  const autoMapAndSaveAll = useCallback(async (spreadsheets: SpreadsheetRef[]) => {
+    let saved = 0;
+    let unchanged = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const loc of locations) {
+      const match = matchForLocation(loc, spreadsheets);
+      if (!match) {
+        skipped++;
+        setRowStates((prev) => ({
+          ...prev,
+          [loc.id]: {
+            status: "unmatched",
+            errorMessage: null,
+            matchedFileName: null,
+            matchedFileId: null,
+          },
+        }));
+        if (loc.spreadsheetId) {
+          setRowStates((prev) => ({
+            ...prev,
+            [loc.id]: { ...prev[loc.id], status: "syncing" },
+          }));
+          try {
+            const updated = await persistSpreadsheetId(loc.id, null);
+            setLocations((prev) =>
+              prev.map((l) => (l.id === loc.id ? updated : l))
+            );
+          } catch (e) {
+            failed++;
+            setRowStates((prev) => ({
+              ...prev,
+              [loc.id]: {
+                status: "error",
+                errorMessage:
+                  e instanceof Error ? e.message : "クリアに失敗しました",
+                matchedFileName: null,
+                matchedFileId: null,
+              },
+            }));
+          }
+        }
+        continue;
+      }
+
+      if (match.id === (loc.spreadsheetId ?? "")) {
+        unchanged++;
+        setRowStates((prev) => ({
+          ...prev,
+          [loc.id]: {
+            status: "idle",
+            errorMessage: null,
+            matchedFileName: match.name,
+            matchedFileId: match.id,
+          },
+        }));
+        continue;
+      }
+
+      setRowStates((prev) => ({
+        ...prev,
+        [loc.id]: {
+          status: "syncing",
+          errorMessage: null,
+          matchedFileName: match.name,
+          matchedFileId: match.id,
+        },
+      }));
+
+      try {
+        const updated = await persistSpreadsheetId(loc.id, match.id);
+        setLocations((prev) =>
+          prev.map((l) => (l.id === loc.id ? updated : l))
+        );
+        setRowStates((prev) => ({
+          ...prev,
+          [loc.id]: {
+            status: "success",
+            errorMessage: null,
+            matchedFileName: match.name,
+            matchedFileId: match.id,
+          },
+        }));
+        saved++;
+        setTimeout(() => {
+          setRowStates((prev) => ({
+            ...prev,
+            [loc.id]: { ...prev[loc.id], status: "idle" },
+          }));
+        }, 3000);
+      } catch (e) {
+        failed++;
+        setRowStates((prev) => ({
+          ...prev,
+          [loc.id]: {
+            status: "error",
+            errorMessage: e instanceof Error ? e.message : "保存に失敗しました",
+            matchedFileName: match.name,
+            matchedFileId: match.id,
+          },
+        }));
+      }
+    }
+
+    setSyncSummary(
+      `${yearMonth} のファイル名で自動紐付けしました。保存 ${saved} 件、変更なし ${unchanged} 件、該当なし ${skipped} 件${failed > 0 ? `、失敗 ${failed} 件` : ""}。`
+    );
+  }, [locations, yearMonth, matchForLocation]);
+
+  const prevYearMonthRef = useRef(yearMonth);
+  const cacheRestoredRef = useRef(false);
+
+  useEffect(() => {
+    if (cacheRestoredRef.current) return;
+    cacheRestoredRef.current = true;
+    const cached = loadLocationsDriveCache();
+    if (!cached) return;
+    setFolderInput(cached.folderId);
+    setAvailableSpreadsheets(cached.spreadsheets);
+    setFolderFetchState("success");
+  }, []);
+
+  useEffect(() => {
+    if (availableSpreadsheets.length === 0 || locations.length === 0) return;
+    applyPreviewForYearMonth(availableSpreadsheets);
+  }, [
+    yearMonth,
+    availableSpreadsheets,
+    locations.length,
+    applyPreviewForYearMonth,
+  ]);
+
+  useEffect(() => {
+    if (prevYearMonthRef.current === yearMonth) return;
+    prevYearMonthRef.current = yearMonth;
+
+    if (availableSpreadsheets.length === 0 || locations.length === 0) return;
+    if (!canEdit || folderFetchState === "loading") return;
+
+    void (async () => {
+      setSyncSummary(null);
+      await autoMapAndSaveAll(availableSpreadsheets);
+    })();
+  }, [
+    yearMonth,
+    availableSpreadsheets,
+    locations.length,
+    canEdit,
+    folderFetchState,
+    autoMapAndSaveAll,
+  ]);
 
   const handleFetchSpreadsheets = async () => {
     if (!canEdit) return;
@@ -131,7 +306,7 @@ export default function LocationsPage() {
 
     setFolderFetchState("loading");
     setFolderFetchError(null);
-    setSuggestSummary(null);
+    setSyncSummary(null);
 
     try {
       const res = await fetchApi(
@@ -144,9 +319,15 @@ export default function LocationsPage() {
         );
       }
       const data = (await res.json()) as { spreadsheets: SpreadsheetRef[] };
-      setAvailableSpreadsheets(data.spreadsheets ?? []);
+      const spreadsheets = data.spreadsheets ?? [];
+      setAvailableSpreadsheets(spreadsheets);
       setFolderFetchState("success");
-      setManualInputRows({});
+      saveLocationsDriveCache({ folderId, spreadsheets });
+      if (spreadsheets.length > 0 && locations.length > 0) {
+        await autoMapAndSaveAll(spreadsheets);
+      } else if (spreadsheets.length === 0) {
+        setSyncSummary("フォルダ内にスプレッドシートがありませんでした。");
+      }
     } catch (e) {
       setAvailableSpreadsheets([]);
       setFolderFetchState("error");
@@ -156,256 +337,101 @@ export default function LocationsPage() {
     }
   };
 
-  const handleSuggestByName = () => {
-    if (availableSpreadsheets.length === 0) return;
-    let suggested = 0;
-    let skipped = 0;
+  const renderSpreadsheetField = (loc: Location) => {
+    const hasFolderList = availableSpreadsheets.length > 0;
+    const matchForMonth = hasFolderList
+      ? matchForLocation(loc, availableSpreadsheets)
+      : null;
 
-    setRowStates((prev) => {
-      const next = { ...prev };
-      for (const loc of locations) {
-        const match = findSpreadsheetByLocationName(
-          availableSpreadsheets,
-          loc.name
-        );
-        if (match) {
-          next[loc.id] = {
-            ...next[loc.id],
-            value: match.id,
-            saveState: "idle",
-            errorMessage: null,
-          };
-          suggested++;
-        } else {
-          skipped++;
-        }
-      }
-      return next;
-    });
+    const fileName = matchForMonth?.name ?? "";
+    const fileId = matchForMonth?.id ?? "";
+    const placeholder = !hasFolderList
+      ? `「一覧取得」で ${yearMonth} のファイルを表示`
+      : `該当ファイルなし（${yearMonth}）`;
 
-    setManualInputRows({});
-    setSuggestSummary(
-      `${suggested} 拠点を提案しました。${skipped} 拠点は手動での設定が必要です。内容を確認してから各行の「保存」を押してください。`
+    return (
+      <div className="space-y-1.5 max-w-xl">
+        {matchForMonth && (
+          <p
+            className="text-xs text-muted-foreground truncate"
+            title={fileName}
+          >
+            {fileName}
+          </p>
+        )}
+        <Input
+          readOnly
+          tabIndex={-1}
+          value={fileId}
+          placeholder={placeholder}
+          className="font-mono text-sm bg-muted/40 border-border/80 cursor-default focus-visible:ring-0"
+          aria-label={`${loc.name} の Google Drive ファイル ID`}
+        />
+      </div>
     );
   };
 
-  const handleSave = async (locationId: string) => {
-    if (!canEdit) return;
-    const row = rowStates[locationId];
-    if (!row) return;
-
-    const sheetId = extractSheetId(row.value) || null;
-
-    setRowStates((prev) => ({
-      ...prev,
-      [locationId]: { ...prev[locationId], saveState: "saving", errorMessage: null },
-    }));
-
-    try {
-      const res = await fetchApi(`/api/locations/${locationId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spreadsheetId: sheetId }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error ?? "保存に失敗しました");
-      }
-
-      const updated: Location = await res.json();
-      setLocations((prev) =>
-        prev.map((loc) => (loc.id === locationId ? updated : loc))
-      );
-      setRowStates((prev) => ({
-        ...prev,
-        [locationId]: {
-          value: updated.spreadsheetId ?? "",
-          saveState: "success",
-          errorMessage: null,
-        },
-      }));
-
-      setTimeout(() => {
-        setRowStates((prev) => ({
-          ...prev,
-          [locationId]: { ...prev[locationId], saveState: "idle" },
-        }));
-      }, 3000);
-    } catch (e) {
-      setRowStates((prev) => ({
-        ...prev,
-        [locationId]: {
-          ...prev[locationId],
-          saveState: "error",
-          errorMessage: e instanceof Error ? e.message : "保存に失敗しました",
-        },
-      }));
-    }
-  };
-
-  const handleClear = async (locationId: string) => {
-    if (!canEdit) return;
-    setRowStates((prev) => ({
-      ...prev,
-      [locationId]: { value: "", saveState: "saving", errorMessage: null },
-    }));
-
-    try {
-      const res = await fetchApi(`/api/locations/${locationId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spreadsheetId: null }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error ?? "クリアに失敗しました");
-      }
-
-      const updated: Location = await res.json();
-      setLocations((prev) =>
-        prev.map((loc) => (loc.id === locationId ? updated : loc))
-      );
-      setRowStates((prev) => ({
-        ...prev,
-        [locationId]: { value: "", saveState: "idle", errorMessage: null },
-      }));
-    } catch (e) {
-      setRowStates((prev) => ({
-        ...prev,
-        [locationId]: {
-          ...prev[locationId],
-          value: locations.find((l) => l.id === locationId)?.spreadsheetId ?? "",
-          saveState: "error",
-          errorMessage: e instanceof Error ? e.message : "クリアに失敗しました",
-        },
-      }));
-    }
-  };
-
-  const isDirty = (locationId: string) => {
-    const loc = locations.find((l) => l.id === locationId);
-    if (!loc) return false;
-    const row = rowStates[locationId];
-    if (!row) return false;
-    const currentExtracted = extractSheetId(row.value) || null;
-    return currentExtracted !== (loc.spreadsheetId ?? null);
-  };
-
-  const shouldUseDropdown = (locationId: string) =>
-    availableSpreadsheets.length > 0 && !manualInputRows[locationId];
-
-  const getOtherLocationsUsingSheet = (
-    locationId: string,
-    spreadsheetId: string
-  ): string[] => {
-    if (!spreadsheetId) return [];
-    return locations
-      .filter((l) => {
-        if (l.id === locationId) return false;
-        const otherValue = rowStates[l.id]?.value ?? "";
-        return extractSheetId(otherValue) === spreadsheetId;
-      })
-      .map((l) => l.name);
-  };
-
-  const renderSheetInput = (loc: Location) => {
+  const renderStatus = (loc: Location) => {
     const row = rowStates[loc.id];
-    const disabled = row?.saveState === "saving";
+    const hasFolderList = availableSpreadsheets.length > 0;
+    const matchForMonth = hasFolderList
+      ? matchForLocation(loc, availableSpreadsheets)
+      : null;
+    const configured = !!matchForMonth;
 
-    if (!canEdit) {
+    if (row?.status === "syncing") {
       return (
-        <span className="font-mono text-sm text-foreground">
-          {loc.spreadsheetId ?? (
-            <span className="text-muted-foreground italic">未設定</span>
-          )}
+        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          保存中...
         </span>
       );
     }
-
-    if (shouldUseDropdown(loc.id)) {
-      const currentId = extractSheetId(row?.value ?? "");
-      const selectValue = currentId || SELECT_NONE;
-      const orphanId =
-        currentId &&
-        !availableSpreadsheets.some((s) => s.id === currentId)
-          ? currentId
-          : null;
-
+    if (row?.status === "success") {
       return (
-        <div className="space-y-1">
-          <Select
-            value={selectValue}
-            onValueChange={(v) =>
-              handleValueChange(loc.id, v === SELECT_NONE ? "" : v)
-            }
-            disabled={disabled}
-          >
-            <SelectTrigger className="font-mono text-sm">
-              <SelectValue placeholder="スプレッドシートを選択" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={SELECT_NONE}>未選択</SelectItem>
-              {orphanId && (
-                <SelectItem value={orphanId}>
-                  （現在の設定）{orphanId}
-                </SelectItem>
-              )}
-              {availableSpreadsheets.map((s) => {
-                const usedBy = getOtherLocationsUsingSheet(loc.id, s.id);
-                const suffix =
-                  usedBy.length > 0
-                    ? `（${usedBy.join("、")} で使用中）`
-                    : "";
-                return (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.name}
-                    {suffix}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-          <button
-            type="button"
-            className="text-xs text-primary hover:underline"
-            onClick={() =>
-              setManualInputRows((prev) => ({ ...prev, [loc.id]: true }))
-            }
-          >
-            手入力で設定
-          </button>
-        </div>
+        <span className="inline-flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          保存済
+        </span>
       );
     }
-
+    if (row?.status === "error") {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs text-destructive font-medium">
+          <AlertCircle className="h-3.5 w-3.5" />
+          失敗
+        </span>
+      );
+    }
+    if (!hasFolderList) {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground bg-muted border border-border rounded-full px-2 py-0.5">
+          <CircleDashed className="h-3 w-3" />
+          未設定
+        </span>
+      );
+    }
+    if (row?.status === "unmatched" || !matchForMonth) {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+          <CircleDashed className="h-3 w-3" />
+          未紐付け
+        </span>
+      );
+    }
+    if (configured) {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5 font-medium">
+          <CheckCircle2 className="h-3 w-3" />
+          設定済
+        </span>
+      );
+    }
     return (
-      <div className="space-y-1">
-        <Input
-          type="text"
-          value={row?.value ?? ""}
-          onChange={(e) => handleValueChange(loc.id, e.target.value)}
-          placeholder="Sheets ID または Google Sheets URL を貼り付け"
-          className="font-mono text-sm"
-          disabled={disabled}
-        />
-        {availableSpreadsheets.length > 0 && (
-          <button
-            type="button"
-            className="text-xs text-primary hover:underline"
-            onClick={() =>
-              setManualInputRows((prev) => {
-                const next = { ...prev };
-                delete next[loc.id];
-                return next;
-              })
-            }
-          >
-            一覧から選択
-          </button>
-        )}
-      </div>
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground bg-muted border border-border rounded-full px-2 py-0.5">
+        <CircleDashed className="h-3 w-3" />
+        未設定
+      </span>
     );
   };
 
@@ -424,13 +450,10 @@ export default function LocationsPage() {
           <YearMonthPicker />
         </div>
         <p className="text-[15px] text-muted-foreground ml-[60px] leading-relaxed">
-          各拠点の売上データを参照する Google スプレッドシートを設定します。
-          Google Drive のフォルダをサービスアカウント（閲覧者）に共有したうえで、フォルダから一覧を取得して紐付けできます。
-          一覧を取得しない場合は、従来どおり Sheets の URL（
-          <code className="text-xs bg-muted px-1 py-0.5 rounded">
-            https://docs.google.com/spreadsheets/d/...
-          </code>
-          ）または file ID を直接入力できます。
+          各拠点の売上データを参照する Google スプレッドシートを、Drive フォルダから一括で紐付けします。
+          画面上部の年月と、ファイル名（拠点名・年月を含む「損益計算資料」）が一致するファイルを「一覧取得」で自動紐付け・DB 保存します。
+          各拠点の Drive ファイル ID は表の入力欄に読み取り専用で表示されます。
+          フォルダはサービスアカウント（閲覧者）に共有してください。
         </p>
       </div>
 
@@ -447,7 +470,8 @@ export default function LocationsPage() {
             <code className="text-xs bg-muted px-1 py-0.5 rounded">
               https://drive.google.com/drive/folders/...
             </code>
-            ）またはフォルダ ID を入力し、フォルダ内のスプレッドシート（Google シートおよび .xlsx）一覧を取得します。
+            ）またはフォルダ ID を入力し、「一覧取得」で全拠点を自動紐付けします（対象年月:{" "}
+            <strong>{yearMonth}</strong>）。
           </p>
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex-1 min-w-[240px]">
@@ -473,17 +497,12 @@ export default function LocationsPage() {
               {folderFetchState === "loading" ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  取得中...
+                  取得・紐付け中...
                 </>
               ) : (
                 "一覧取得"
               )}
             </Button>
-            {folderFetchState === "success" && availableSpreadsheets.length > 0 && (
-              <Button variant="outline" onClick={handleSuggestByName}>
-                名前で自動提案
-              </Button>
-            )}
           </div>
 
           {folderFetchState === "error" && folderFetchError && (
@@ -493,8 +512,8 @@ export default function LocationsPage() {
             </p>
           )}
 
-          {suggestSummary && (
-            <p className="text-sm text-muted-foreground mt-3">{suggestSummary}</p>
+          {syncSummary && (
+            <p className="text-sm text-muted-foreground mt-3">{syncSummary}</p>
           )}
 
           {folderFetchState === "success" && (
@@ -545,23 +564,16 @@ export default function LocationsPage() {
                   拠点
                 </th>
                 <th className="px-5 py-4 text-left text-sm font-semibold text-foreground">
-                  スプレッドシート
+                  スプレッドシート（Drive ファイル ID）
                 </th>
                 <th className="px-5 py-4 text-left text-sm font-semibold text-foreground w-[120px]">
                   状態
                 </th>
-                {canEdit && (
-                  <th className="px-5 py-4 text-left text-sm font-semibold text-foreground w-[140px]">
-                    操作
-                  </th>
-                )}
               </tr>
             </thead>
             <tbody>
               {locations.map((loc) => {
                 const row = rowStates[loc.id];
-                const dirty = isDirty(loc.id);
-                const configured = !!loc.spreadsheetId;
 
                 return (
                   <tr
@@ -570,64 +582,20 @@ export default function LocationsPage() {
                   >
                     <td className="px-5 py-3 font-medium text-foreground">
                       {loc.name}
+                      <span className="block text-xs text-muted-foreground font-mono">
+                        {loc.code}
+                      </span>
                     </td>
                     <td className="px-5 py-3">
-                      {renderSheetInput(loc)}
-                      {row?.saveState === "error" && row.errorMessage && (
+                      {renderSpreadsheetField(loc)}
+                      {row?.status === "error" && row.errorMessage && (
                         <p className="text-xs text-destructive mt-1 flex items-center gap-1">
                           <AlertCircle className="h-3 w-3 shrink-0" />
                           {row.errorMessage}
                         </p>
                       )}
                     </td>
-                    <td className="px-5 py-3">
-                      {row?.saveState === "saving" ? (
-                        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          保存中...
-                        </span>
-                      ) : row?.saveState === "success" ? (
-                        <span className="inline-flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          保存済
-                        </span>
-                      ) : configured ? (
-                        <span className="inline-flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5 font-medium">
-                          <CheckCircle2 className="h-3 w-3" />
-                          設定済
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground bg-muted border border-border rounded-full px-2 py-0.5">
-                          <CircleDashed className="h-3 w-3" />
-                          未設定
-                        </span>
-                      )}
-                    </td>
-                    {canEdit && (
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => handleSave(loc.id)}
-                            disabled={!dirty || row?.saveState === "saving"}
-                            className="h-7 text-xs px-3"
-                          >
-                            保存
-                          </Button>
-                          {configured && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleClear(loc.id)}
-                              disabled={row?.saveState === "saving"}
-                              className="h-7 text-xs px-3 text-muted-foreground hover:text-destructive"
-                            >
-                              クリア
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    )}
+                    <td className="px-5 py-3">{renderStatus(loc)}</td>
                   </tr>
                 );
               })}
