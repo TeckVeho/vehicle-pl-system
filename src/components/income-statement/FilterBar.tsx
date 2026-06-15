@@ -11,6 +11,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { DisplayMode } from "./PLTable";
+import { getMaxMonth, parseYearMonth } from "@/stores/yearMonthStore";
+import { YearMonthPicker } from "@/components/common/YearMonthPicker";
 
 interface FilterBarProps {
   yearMonth: string;
@@ -21,18 +23,6 @@ interface FilterBarProps {
   onDisplayModeChange: (value: DisplayMode) => void;
 }
 
-function getYearMonths(): string[] {
-  const months: string[] = [];
-  const now = new Date();
-  for (let i = -12; i <= 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-    months.push(
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-    );
-  }
-  return months.reverse();
-}
-
 export function FilterBar({
   yearMonth,
   searchQuery,
@@ -41,25 +31,28 @@ export function FilterBar({
   onSearchChange,
   onDisplayModeChange,
 }: FilterBarProps) {
-  const yearMonths = getYearMonths();
+  const { year, month } = parseYearMonth(yearMonth);
+
+  const handleYearChange = (v: string) => {
+    const newYear = Number(v);
+    const max = getMaxMonth(newYear);
+    const clampedMonth = month > max ? max : month;
+    onYearMonthChange(`${newYear}-${String(clampedMonth).padStart(2, "0")}`);
+  };
+
+  const handleMonthChange = (v: string) => {
+    const newMonth = Number(v);
+    onYearMonthChange(`${year}-${String(newMonth).padStart(2, "0")}`);
+  };
 
   return (
     <div className="flex flex-nowrap gap-5 items-center mb-6 overflow-x-auto">
-      <div className="flex items-center gap-2 shrink-0">
-        <span className="text-sm text-muted-foreground whitespace-nowrap">年月</span>
-        <Select value={yearMonth} onValueChange={onYearMonthChange}>
-          <SelectTrigger className="w-36">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {yearMonths.map((ym) => (
-              <SelectItem key={ym} value={ym}>
-                {ym.replace("-", "年")}月
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      <YearMonthPicker
+        year={year}
+        month={month}
+        onYearChange={(y) => handleYearChange(String(y))}
+        onMonthChange={(m) => handleMonthChange(String(m))}
+      />
       <div className="flex items-center gap-1 shrink-0">
         <span className="text-sm text-muted-foreground whitespace-nowrap">表示</span>
         <div className="flex rounded-md border border-input overflow-hidden">

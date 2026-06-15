@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import multer from "multer";
-import * as XLSX from "xlsx";
+import readXlsxFile from "read-excel-file/node";
 import { prisma } from "../lib/prisma.js";
 import { accountItemEffectiveWhere } from "../lib/account-item-filter.js";
 
@@ -31,15 +31,8 @@ function parseCSV(text: string): DataRow[] {
   return rows;
 }
 
-function parseExcel(buffer: Buffer): DataRow[] {
-  const workbook = XLSX.read(buffer, { type: "buffer" });
-  const sheetName = workbook.SheetNames[0];
-  const sheet = workbook.Sheets[sheetName];
-  const raw = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
-    header: 1,
-    defval: "",
-  });
-
+async function parseExcel(buffer: Buffer): Promise<DataRow[]> {
+  const raw = await readXlsxFile(buffer);
   if (raw.length < 2) return [];
   const rows: DataRow[] = [];
   for (const row of raw.slice(1)) {
@@ -78,7 +71,15 @@ importRouter.post(
     let dataRows: DataRow[] = [];
 
     if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
-      dataRows = parseExcel(file.buffer);
+      try {
+        dataRows = await parseExcel(file.buffer);
+      } catch {
+        res.status(400).json({
+          success: 0,
+          errors: ["Excelファイルの読み込みに失敗しました"],
+        });
+        return;
+      }
     } else {
       const text = file.buffer.toString("utf-8");
       dataRows = parseCSV(text);

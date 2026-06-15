@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import {
   Select,
@@ -18,8 +18,15 @@ import {
   Car,
   MapPin,
   ChevronRight,
+  RefreshCw,
 } from "lucide-react";
 import { LoadingOverlay } from "@/components/income-statement/LoadingOverlay";
+import {
+  useYearMonthStore,
+} from "@/stores/yearMonthStore";
+import { YearMonthPicker } from "@/components/common/YearMonthPicker";
+
+import { useAuthStore, canManageMaster } from "@/stores/authStore";
 
 interface LocationSummary {
   locationId: string;
@@ -34,6 +41,7 @@ interface LocationSummary {
 interface DashboardData {
   yearMonth: string;
   lastUpdatedAt: string | null;
+  lastSyncedAt: string | null;
   summary: {
     totalNetRevenue: number;
     totalExpense: number;
@@ -44,47 +52,107 @@ interface DashboardData {
   locationSummaries: LocationSummary[];
 }
 
-function getYearMonths(): string[] {
-  const months: string[] = [];
-  const now = new Date();
-  for (let i = -12; i <= 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-    months.push(
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-    );
-  }
-  return months.reverse();
-}
-
 export default function DashboardPage() {
-  const [yearMonth, setYearMonth] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  });
+  const { year, month, yearMonth, setYear, setMonth } = useYearMonthStore();
+  const user = useAuthStore((s) => s.user);
+  const isMaster = user ? canManageMaster(user.role) : false;
+
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{
+    type: "success" | "info" | "error";
+    message: string;
+    details?: string[];
+  } | null>(null);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const res = await fetchApi(`/api/dashboard/summary?yearMonth=${yearMonth}`);
-        const json = await res.json();
-        if (!res.ok || !json.summary) {
-          setData(null);
-          return;
-        }
-        setData(json);
-      } catch {
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetchApi(`/api/dashboard/summary?yearMonth=${yearMonth}`);
+      const json = await res.json();
+      if (!res.ok || !json.summary) {
         setData(null);
-      } finally {
-        setLoading(false);
+        return;
       }
-    };
-    fetchData();
+      setData(json);
+    } catch {
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
   }, [yearMonth]);
 
-  const yearMonths = getYearMonths();
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await fetchApi("/api/dashboard/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ yearMonth }),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        const totalLocations = json.totalLocations ?? (json.okCount + json.failCount);
+        const message = `同期完了: ${totalLocations}拠点中 ${json.okCount}拠点のデータを同期しました` +
+          (json.failCount > 0 ? `（${json.failCount}拠点はファイル未検出のためスキップ）` : "");
+
+        // Build detail lines for synced locations
+        const details: string[] = [];
+        if (json.results && Array.isArray(json.results)) {
+          const synced = json.results.filter((r: { ok: boolean }) => r.ok);
+          const skipped = json.results.filter((r: { ok: boolean }) => !r.ok);
+
+          if (synced.length > 0) {
+            details.push("【同期済み】");
+            for (const r of synced) {
+              details.push(`  ✓ ${r.locationCode ?? ""} ${r.locationName ?? ""} — ${r.recordCount ?? 0}件`);
+            }
+          }
+          if (skipped.length > 0) {
+            details.push("【スキップ】");
+            for (const r of skipped) {
+              const reason = r.error?.includes("no spreadsheetId")
+                ? "対応ファイル未検出"
+                : r.error?.includes("no_matching_sheet_tab")
+                  ? "対応シート未検出"
+                  : r.error ?? "不明";
+              details.push(`  − ${r.locationCode ?? ""} ${r.locationName ?? ""} — ${reason}`);
+            }
+          }
+        }
+
+        setSyncResult({
+          type: json.failCount > 0 ? "info" : "success",
+          message,
+          details: details.length > 0 ? details : undefined,
+        });
+        // リロードしてデータを更新
+        await fetchData();
+      } else {
+        setSyncResult({
+          type: "error",
+          message: `同期失敗: ${json.error || "不明なエラー"}`,
+        });
+      }
+    } catch {
+      setSyncResult({
+        type: "error",
+        message: "同期に失敗しました。ネットワークを確認してください。",
+      });
+    } finally {
+      setSyncing(false);
+      // 10秒後にメッセージを消す（詳細あるため長めに）
+      setTimeout(() => setSyncResult(null), 10000);
+    }
+  };
+
+
 
   if (loading && !data) {
     return <LoadingOverlay message="読み込み中" />;
@@ -96,19 +164,7 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-3xl font-bold tracking-tight">ダッシュボード</h1>
           <div className="flex items-center gap-2 shrink-0">
-            <span className="text-sm text-muted-foreground whitespace-nowrap">年月</span>
-            <Select value={yearMonth} onValueChange={setYearMonth}>
-              <SelectTrigger className="w-36">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {yearMonths.map((ym) => (
-                  <SelectItem key={ym} value={ym}>
-                    {ym.replace("-", "年")}月
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <YearMonthPicker />
           </div>
         </div>
         <p className="text-muted-foreground">
@@ -125,37 +181,78 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">ダッシュボード</h1>
-          {data?.lastUpdatedAt && (
-            <p className="text-xs text-muted-foreground mt-1">
-              最終更新:{" "}
-              {new Date(data.lastUpdatedAt).toLocaleString("ja-JP", {
-                year: "numeric",
-                month: "2-digit",
-                day: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </p>
-          )}
+          <div className="flex items-center gap-3 mt-1">
+            {data?.lastUpdatedAt && (
+              <p className="text-xs text-muted-foreground">
+                最終更新:{" "}
+                {new Date(data.lastUpdatedAt).toLocaleString("ja-JP", {
+                  year: "numeric",
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </p>
+            )}
+            {data?.lastSyncedAt && (
+              <p className="text-xs text-muted-foreground">
+                最終同期:{" "}
+                {new Date(data.lastSyncedAt).toLocaleString("ja-JP", {
+                  year: "numeric",
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </p>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-sm text-muted-foreground whitespace-nowrap">
-            年月
-          </span>
-          <Select value={yearMonth} onValueChange={setYearMonth}>
-            <SelectTrigger className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {yearMonths.map((ym) => (
-                <SelectItem key={ym} value={ym}>
-                  {ym.replace("-", "年")}月
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* 手動同期ボタン（MASTER 権限のみ表示） */}
+          {isMaster && (
+            <button
+              type="button"
+              onClick={handleSync}
+              disabled={syncing}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Google Drive からスプレッドシート売上データを同期"
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`}
+              />
+              {syncing ? "同期中..." : "データ同期"}
+            </button>
+          )}
+
+          <YearMonthPicker />
         </div>
       </div>
+
+      {/* 同期結果メッセージ */}
+      {syncResult && (
+        <div
+          className={`mb-4 px-4 py-3 text-sm border ${
+            syncResult.type === "error"
+              ? "border-destructive/50 bg-destructive/10 text-destructive"
+              : syncResult.type === "info"
+                ? "border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                : "border-green-500/50 bg-green-500/10 text-green-700 dark:text-green-400"
+          }`}
+        >
+          <div className="font-medium">{syncResult.message}</div>
+          {syncResult.details && syncResult.details.length > 0 && (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-xs opacity-80 hover:opacity-100">
+                詳細を表示
+              </summary>
+              <pre className="mt-1 text-xs whitespace-pre-wrap leading-relaxed opacity-90">
+                {syncResult.details.join("\n")}
+              </pre>
+            </details>
+          )}
+        </div>
+      )}
 
       {data && (
         <>
