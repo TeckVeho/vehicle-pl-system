@@ -15,13 +15,21 @@ import {
 } from "../lib/vehicle-costs.js";
 import { getPreviousYearMonth } from "../lib/salary-daily-proration.js";
 import { isLocationExpenseProrationAccount } from "../lib/location-expense-proration.js";
-import { getRevenueFromSpreadsheets } from "../lib/spreadsheet-revenue.js";
+import { requireRole, ROLES } from "../lib/auth.js";
+import { runSpreadsheetRevenueSync } from "../lib/scheduler.js";
 
 /** 手入力専用（スプレッドシート対象外・MonthlyRecord から取得） */
 const MANUAL_INPUT_ONLY_NAMES = ["その他", "不動産収入", "人材派遣収入"];
 
 export const dashboardRouter = Router();
 
+/**
+ * GET /summary — ダッシュボードサマリー
+ *
+ * 売上データは DB スナップショット（DriveSpreadsheetRevenueLine）から読み取る。
+ * Google Drive への real-time アクセスは行わない（高速化）。
+ * スナップショットが無い拠点/年月は売上 0 として表示する。
+ */
 dashboardRouter.get("/summary", async (req: Request, res: Response) => {
   const yearMonth = req.query.yearMonth as string;
 
@@ -32,7 +40,7 @@ dashboardRouter.get("/summary", async (req: Request, res: Response) => {
 
   const prevYearMonth = getPreviousYearMonth(yearMonth);
 
-  const [locations, vehicles, accountItems, records, prevMonthRecords, vehicleCosts, prevMonthVehicleCosts, locationExpenses, locationParams] =
+  const [locations, vehicles, accountItems, records, prevMonthRecords, vehicleCosts, prevMonthVehicleCosts, locationExpenses, locationParams, driveRevenueLines, syncMetas] =
     await Promise.all([
       prisma.location.findMany({ orderBy: { code: "asc" } }),
       prisma.vehicle.findMany({
@@ -72,6 +80,14 @@ dashboardRouter.get("/summary", async (req: Request, res: Response) => {
       prisma.locationCalculationParameter.findMany({
         where: { yearMonth: prevYearMonth },
       }),
+      // 売上データを DB スナップショットから直接取得（Google Drive を呼ばない）
+      prisma.driveSpreadsheetRevenueLine.findMany({
+        where: { yearMonth },
+      }),
+      // 同期メタデータ（最終同期日時取得用）
+      prisma.locationDriveSyncMeta.findMany({
+        where: { yearMonth },
+      }),
     ]);
 
   const revenueItemIds = new Set(
@@ -81,7 +97,7 @@ dashboardRouter.get("/summary", async (req: Request, res: Response) => {
     accountItems.filter((a) => a.category === EXPENSE_CATEGORY).map((a) => a.id)
   );
 
-  // 売上科目（手入力専用以外）は MonthlyRecord を参照せずスプレッドシートのみ
+  // 売上科目（手入力専用以外）は DB スナップショットから取得
   const revenueFromSpreadsheetIds = new Set(
     accountItems
       .filter(
@@ -199,23 +215,17 @@ dashboardRouter.get("/summary", async (req: Request, res: Response) => {
     }
   }
 
-  // 売上科目（手入力専用以外）は各拠点スプレッドシート参照のみ
-  const revenueAccountItemIds = Array.from(revenueFromSpreadsheetIds);
-  if (revenueAccountItemIds.length > 0) {
-    const locationIds = Array.from(new Set(vehicles.map((v) => v.locationId)));
-    for (const locId of locationIds) {
-      const locVehicleIds = vehicles
-        .filter((v) => v.locationId === locId)
-        .map((v) => v.id);
-      const spreadsheetRevenue = await getRevenueFromSpreadsheets({
-        locationId: locId,
-        yearMonth,
-        vehicleIds: locVehicleIds,
-        revenueAccountItemIds,
-      });
-      spreadsheetRevenue.forEach((amount, key) => {
-        recordMap.set(key, amount);
-      });
+  // 売上科目（手入力専用以外）は DB スナップショットから取得（Google Drive を呼ばない）
+  // スナップショットが無い場合は 0 として扱う
+  for (const line of driveRevenueLines) {
+    recordMap.set(`${line.vehicleId}-${line.accountItemId}`, Number(line.amount));
+  }
+
+  // 最終同期日時: syncMetas の中で最も新しい syncedAt
+  let lastSyncedAt: Date | null = null;
+  for (const meta of syncMetas) {
+    if (!lastSyncedAt || meta.syncedAt > lastSyncedAt) {
+      lastSyncedAt = meta.syncedAt;
     }
   }
 
@@ -258,6 +268,7 @@ dashboardRouter.get("/summary", async (req: Request, res: Response) => {
   res.json({
     yearMonth,
     lastUpdatedAt: lastUpdatedAt ? lastUpdatedAt.toISOString() : null,
+    lastSyncedAt: lastSyncedAt ? lastSyncedAt.toISOString() : null,
     summary: {
       totalNetRevenue,
       totalExpense,
@@ -268,3 +279,35 @@ dashboardRouter.get("/summary", async (req: Request, res: Response) => {
     locationSummaries,
   });
 });
+
+/**
+ * POST /sync — 手動でスプレッドシート売上同期を実行（MASTER 権限必須）
+ *
+ * リクエストボディ:
+ *   { yearMonth?: "YYYY-MM" }  — 省略時は当月＋前月を同期
+ */
+dashboardRouter.post(
+  "/sync",
+  requireRole(ROLES.MASTER),
+  async (req: Request, res: Response) => {
+    const { yearMonth } = req.body ?? {};
+
+    const yearMonths = yearMonth
+      ? [String(yearMonth).trim()]
+      : undefined; // undefined → defaultSpreadsheetRevenueSyncYearMonthsJst()
+
+    try {
+      const result = await runSpreadsheetRevenueSync(yearMonths);
+      res.json({
+        success: true,
+        ...result,
+      });
+    } catch (err) {
+      console.error("[dashboard/sync] error:", err);
+      res.status(500).json({
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+);

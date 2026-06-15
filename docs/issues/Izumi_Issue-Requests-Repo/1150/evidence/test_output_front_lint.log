@@ -1,0 +1,18 @@
+
+> vehicle-pl-system@0.1.0 lint
+> next lint
+
+`next lint` is deprecated and will be removed in Next.js 16.
+For new projects, use create-next-app to choose your preferred linter.
+For existing projects, migrate to the ESLint CLI:
+npx @next/codemod@canary next-lint-to-eslint-cli .
+
+
+./src/components/income-statement/EditableCell.tsx
+62:6  Warning: React Hook useEffect has a missing dependency: 'startEditing'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/components/income-statement/PLTable.tsx
+196:6  Warning: React Hook useMemo has missing dependencies: 'getAmount', 'getCellValueFromComputed', and 'getCourseCellValueFromComputed'. Either include them or remove the dependency array.  react-hooks/exhaustive-deps
+
+info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/app/api-reference/config/eslint#disabling-rules
+--- LINT EXIT: 0 ---

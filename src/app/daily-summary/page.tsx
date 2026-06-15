@@ -13,6 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useYearMonthStore, getMaxMonth } from "@/stores/yearMonthStore";
+import { YearMonthPicker } from "@/components/common/YearMonthPicker";
 
 interface Location {
   id: string;
@@ -28,17 +30,7 @@ interface Vehicle {
   course?: { id: string; name: string; code: string } | null;
 }
 
-function getYearMonths(): string[] {
-  const months: string[] = [];
-  const now = new Date();
-  for (let i = -12; i <= 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-    months.push(
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-    );
-  }
-  return months.reverse();
-}
+
 
 function DailySummaryContent() {
   const searchParams = useSearchParams();
@@ -51,12 +43,33 @@ function DailySummaryContent() {
     Record<string, number>
   >({});
   const [daysInMonth, setDaysInMonth] = useState(31);
-  const [yearMonth, setYearMonth] = useState(() => {
+
+  // 年月は共有ストアを使用（ページ間で選択を保持）
+  const { year, month, yearMonth: storeYearMonth, setYear, setMonth, setYearMonth: setStoreYearMonth } = useYearMonthStore();
+  const [yearMonth, setYearMonthLocal] = useState(() => {
     const fromUrl = searchParams.get("yearMonth");
-    if (fromUrl) return fromUrl;
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    if (fromUrl) {
+      setStoreYearMonth(fromUrl);
+      return fromUrl;
+    }
+    return storeYearMonth;
   });
+  const setYearMonth = (ym: string) => {
+    setYearMonthLocal(ym);
+    setStoreYearMonth(ym);
+  };
+  const handleYearChange = (v: string) => {
+    const newYear = Number(v);
+    const max = getMaxMonth(newYear);
+    const clampedMonth = month > max ? max : month;
+    setYear(newYear);
+    setYearMonthLocal(`${newYear}-${String(clampedMonth).padStart(2, "0")}`);
+  };
+  const handleMonthChange = (v: string) => {
+    setMonth(Number(v));
+    setYearMonthLocal(`${year}-${String(v).padStart(2, "0")}`);
+  };
+
   const [locationId, setLocationId] = useState(() => {
     return searchParams.get("locationId") ?? "all";
   });
@@ -109,7 +122,7 @@ function DailySummaryContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [yearMonth, locationId]);
 
-  const yearMonths = getYearMonths();
+
 
   if (loading && vehicles.length === 0) {
     return <LoadingOverlay message="読み込み中" />;
@@ -126,23 +139,12 @@ function DailySummaryContent() {
       </div>
 
       <div className="flex flex-nowrap gap-5 items-center mb-6 overflow-x-auto">
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-sm text-muted-foreground whitespace-nowrap">
-            年月
-          </span>
-          <Select value={yearMonth} onValueChange={setYearMonth}>
-            <SelectTrigger className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {yearMonths.map((ym) => (
-                <SelectItem key={ym} value={ym}>
-                  {ym.replace("-", "年")}月
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <YearMonthPicker
+          year={year}
+          month={month}
+          onYearChange={(y) => handleYearChange(String(y))}
+          onMonthChange={(m) => handleMonthChange(String(m))}
+        />
       </div>
 
       <DailySummaryTable
