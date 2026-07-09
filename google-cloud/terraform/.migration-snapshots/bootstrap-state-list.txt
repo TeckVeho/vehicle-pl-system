@@ -1,0 +1,2 @@
+google_project_service.storage
+google_storage_bucket.terraform_state

@@ -36,6 +36,9 @@ export default function LoginPage() {
         return;
       }
 
+      // API cookie (auth-token) is on the API host; middleware needs auth-session on the web host.
+      await fetch("/api/auth/session", { method: "POST", credentials: "include" });
+
       router.push("/dashboard");
       router.refresh();
     } catch {

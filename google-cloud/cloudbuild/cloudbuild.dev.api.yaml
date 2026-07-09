@@ -1,0 +1,74 @@
+# Cloud Build — dev API only
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        docker pull ${_REGION}-docker.pkg.dev/${_AR_PROJECT_ID}/${_REPO}/izumi-vpl-api:${_TAG} || true
+        docker build -f Dockerfile.prod \
+          --cache-from ${_REGION}-docker.pkg.dev/${_AR_PROJECT_ID}/${_REPO}/izumi-vpl-api:${_TAG} \
+          -t ${_REGION}-docker.pkg.dev/${_AR_PROJECT_ID}/${_REPO}/izumi-vpl-api:${_TAG} \
+          .
+    dir: 'backend'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/${_AR_PROJECT_ID}/${_REPO}/izumi-vpl-api:${_TAG}'
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'jobs'
+      - 'update'
+      - '${_MIGRATE_JOB}'
+      - '--project'
+      - '${_DEPLOY_PROJECT_ID}'
+      - '--image'
+      - '${_REGION}-docker.pkg.dev/${_AR_PROJECT_ID}/${_REPO}/izumi-vpl-api:${_TAG}'
+      - '--region'
+      - '${_REGION}'
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'jobs'
+      - 'execute'
+      - '${_MIGRATE_JOB}'
+      - '--project'
+      - '${_DEPLOY_PROJECT_ID}'
+      - '--region'
+      - '${_REGION}'
+      - '--wait'
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_API_SERVICE}'
+      - '--project'
+      - '${_DEPLOY_PROJECT_ID}'
+      - '--image'
+      - '${_REGION}-docker.pkg.dev/${_AR_PROJECT_ID}/${_REPO}/izumi-vpl-api:${_TAG}'
+      - '--region'
+      - '${_REGION}'
+      - '--no-invoker-iam-check'
+
+substitutions:
+  _REGION: asia-northeast1
+  _REPO: izumi-vpl-docker
+  _TAG: dev
+  _AR_PROJECT_ID: ''
+  _DEPLOY_PROJECT_ID: ''
+  _API_SERVICE: izumi-vpl-api-dev
+  _MIGRATE_JOB: izumi-vpl-migrate-dev
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_MEDIUM

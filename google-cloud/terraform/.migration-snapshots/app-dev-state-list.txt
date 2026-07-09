@@ -1,0 +1,5 @@
+[31mError loading the state: Failed to open state file at gs://dx-kumu-common-terraform-state/app/dev/default.tfstate: Get "https://storage.googleapis.com/dx-kumu-common-terraform-state/app/dev/default.tfstate": oauth2: "invalid_grant" "reauth related error (invalid_rapt)" "https://support.google.com/a/answer/9368756"
+
+Please ensure that your Terraform state exists and that you've
+configured it properly. You can use the "-state" flag to point
+Terraform at another state file.[0m[0m

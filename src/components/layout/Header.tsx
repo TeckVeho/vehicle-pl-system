@@ -57,6 +57,7 @@ export function Header() {
 
   const handleLogout = async () => {
     await fetchApi("/api/auth/logout", { method: "POST" });
+    await fetch("/api/auth/session", { method: "DELETE", credentials: "include" });
     router.push("/login");
     router.refresh();
   };

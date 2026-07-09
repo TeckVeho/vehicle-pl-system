@@ -35,9 +35,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           });
         }
         setUser(null);
-        // 401: 再ログインが必要（auth-token が無効な場合）
+        // 401: stale web session flag without a valid API token — clear to avoid /login ↔ /dashboard loop.
         if (res.status === 401) {
-          window.location.href = `/login?from=${encodeURIComponent(pathname)}`;
+          fetch("/api/auth/session", { method: "DELETE", credentials: "include" })
+            .catch(() => undefined)
+            .finally(() => {
+              window.location.href = `/login?from=${encodeURIComponent(pathname)}`;
+            });
         }
       })
       .catch(() => {
