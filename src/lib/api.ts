@@ -2,6 +2,10 @@
  * API ベース URL（空の場合は Next.js の rewrites でプロキシされる相対パスを使用）
  */
 export function getApiUrl(): string {
+  // Browser: same-origin requests hit Next.js rewrites → backend API (keeps cookies on web host).
+  if (typeof window !== "undefined") {
+    return "";
+  }
   const url = process.env.NEXT_PUBLIC_API_URL ?? "";
   return url.replace(/\/$/, "");
 }

@@ -1,0 +1,46 @@
+# vehicle-pl-system — dev/app (izumi-vpl)
+# Copy to terraform.tfvars (gitignored). Secrets via Secret Manager only.
+
+project_id = "izumi-vpl"
+env_suffix = "dev"
+
+container_image     = "asia-northeast1-docker.pkg.dev/izumi-vpl/izumi-vpl-docker/izumi-vpl-api:dev"
+web_container_image = "asia-northeast1-docker.pkg.dev/izumi-vpl/izumi-vpl-docker/izumi-vpl-web:dev"
+
+container_port     = 8080
+web_container_port = 3000
+
+env_vars = {
+  NODE_ENV    = "production"
+  TIMEZONE    = "Asia/Tokyo"
+  CORS_ORIGIN = "https://REPLACE-WITH-WEB-CLOUD-RUN-URL"
+}
+
+web_env_vars = {
+  NODE_ENV             = "production"
+  NEXT_PUBLIC_API_URL  = "https://REPLACE-WITH-API-CLOUD-RUN-URL"
+  NEXT_PUBLIC_BASE_URL = "https://REPLACE-WITH-WEB-CLOUD-RUN-URL"
+}
+
+resource_tier = "tier3"
+
+sql_database_name = "vehicle_pl_system"
+
+enable_gcs       = false
+enable_cloud_sql = true
+network_remote_state_bucket = "izumi-vpl-terraform-state"
+network_remote_state_prefix = "network/dev"
+
+enable_sql_night_weekend_schedule = true
+enable_cron_cloud_scheduler       = false
+
+allow_unauthenticated     = true
+allow_unauthenticated_web = true
+
+enable_env_iam_custom_roles = true
+
+api_secret_env_from_sm = [
+  { env_name = "JWT_SECRET", secret_id = "izumi-vpl-jwt-secret-dev", version = "latest" },
+  { env_name = "GOOGLE_SERVICE_ACCOUNT_JSON", secret_id = "izumi-vpl-google-sa-json-dev", version = "latest" },
+  { env_name = "GOOGLE_DRIVE_FOLDER_ID", secret_id = "izumi-vpl-google-drive-folder-dev", version = "latest" },
+]

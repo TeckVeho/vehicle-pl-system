@@ -1,0 +1,4 @@
+# vehicle-pl-system — network (izumi-vpl, single project)
+# Copy to terraform.tfvars
+
+project_id = "izumi-vpl"
