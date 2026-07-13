@@ -12,7 +12,7 @@ export GOOGLE_OAUTH_ACCESS_TOKEN
 GOOGLE_OAUTH_ACCESS_TOKEN="$(gcloud auth print-access-token)"
 
 echo "==> Checking billing..."
-if ! gcloud billing projects describe "${GCP_PROJECT_ID}" --format='value(billingEnabled)' | grep -q true; then
+if ! gcloud billing projects describe "${GCP_PROJECT_ID}" --format='value(billingEnabled)' | grep -qi true; then
   echo "ERROR: Billing is not enabled on ${GCP_PROJECT_ID}." >&2
   echo "Enable billing in Console: https://console.cloud.google.com/billing/linkedaccount?project=${GCP_PROJECT_ID}" >&2
   echo "Use the same billing account as izumi-mt: 0127E3-359F8F-3BF2C5" >&2

@@ -17,8 +17,8 @@ web_container_image = "asia-northeast1-docker.pkg.dev/izumi-vpl/izumi-vpl-docker
 container_port     = 8080
 web_container_port = 3000
 
-# api_custom_domain = "izumi-vpl-api-stg.example.com"
-# web_custom_domain = "izumi-vpl-stg.example.com"
+api_custom_domain = "vpl-stage-api.izumilogi.com"
+web_custom_domain = "vpl-stage.izumilogi.com"
 
 env_vars = {
   NODE_ENV = "production"

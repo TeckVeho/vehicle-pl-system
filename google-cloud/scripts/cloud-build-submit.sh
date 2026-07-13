@@ -10,6 +10,7 @@ source "${ROOT}/google-cloud/scripts/load-env.sh"
 
 CONFIG="${1:-google-cloud/cloudbuild/cloudbuild.dev.yaml}"
 TAG="${TAG:-dev}"
+SERVICE_SUFFIX="${SERVICE_SUFFIX:-${TAG}}"
 CONFIG_BASE=$(basename "$CONFIG")
 
 CORE_SUBS="_TAG=${TAG},_AR_PROJECT_ID=${GCP_PROJECT_ID},_DEPLOY_PROJECT_ID=${GCP_PROJECT_ID},_REPO=${GCP_PROJECT_ID}-docker"
@@ -23,7 +24,7 @@ fi
 
 if [[ "${CONFIG_BASE}" == *.api.yaml ]]; then
   exec gcloud builds submit --project="${GCP_PROJECT_ID}" --config="${CONFIG}" \
-    --substitutions="${CORE_SUBS},_API_SERVICE=${GCP_PROJECT_ID}-api-${TAG},_MIGRATE_JOB=${GCP_PROJECT_ID}-migrate-${TAG}" .
+    --substitutions="${CORE_SUBS},_API_SERVICE=${GCP_PROJECT_ID}-api-${SERVICE_SUFFIX},_MIGRATE_JOB=${GCP_PROJECT_ID}-migrate-${SERVICE_SUFFIX}" .
 fi
 
 if [[ "${CONFIG_BASE}" == *.web.yaml ]]; then
@@ -32,7 +33,7 @@ if [[ "${CONFIG_BASE}" == *.web.yaml ]]; then
     exit 1
   fi
   exec gcloud builds submit --project="${GCP_PROJECT_ID}" --config="${CONFIG}" \
-    --substitutions="${CORE_SUBS},_WEB_SERVICE=${GCP_PROJECT_ID}-web-${TAG},_NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL},_NEXT_PUBLIC_BASE_URL=${NEXT_PUBLIC_BASE_URL}" .
+    --substitutions="${CORE_SUBS},_WEB_SERVICE=${GCP_PROJECT_ID}-web-${SERVICE_SUFFIX},_NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL},_NEXT_PUBLIC_BASE_URL=${NEXT_PUBLIC_BASE_URL}" .
 fi
 
 if [[ -z "${NEXT_PUBLIC_API_URL:-}" ]] || [[ -z "${NEXT_PUBLIC_BASE_URL:-}" ]]; then
@@ -41,4 +42,4 @@ if [[ -z "${NEXT_PUBLIC_API_URL:-}" ]] || [[ -z "${NEXT_PUBLIC_BASE_URL:-}" ]]; 
 fi
 
 exec gcloud builds submit --project="${GCP_PROJECT_ID}" --config="${CONFIG}" \
-  --substitutions="${CORE_SUBS},_API_SERVICE=${GCP_PROJECT_ID}-api-${TAG},_WEB_SERVICE=${GCP_PROJECT_ID}-web-${TAG},_MIGRATE_JOB=${GCP_PROJECT_ID}-migrate-${TAG},_NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL},_NEXT_PUBLIC_BASE_URL=${NEXT_PUBLIC_BASE_URL}" .
+  --substitutions="${CORE_SUBS},_API_SERVICE=${GCP_PROJECT_ID}-api-${SERVICE_SUFFIX},_WEB_SERVICE=${GCP_PROJECT_ID}-web-${SERVICE_SUFFIX},_MIGRATE_JOB=${GCP_PROJECT_ID}-migrate-${SERVICE_SUFFIX},_NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL},_NEXT_PUBLIC_BASE_URL=${NEXT_PUBLIC_BASE_URL}" .
