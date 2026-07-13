@@ -7,7 +7,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "${ROOT}/google-cloud/scripts/load-env.sh"
 
 PROJECT="${GCP_PROJECT_ID}"
-SUFFIX="dev"
+SUFFIX="${SUFFIX:-dev}"
 
 create_secret_if_missing() {
   local secret_id="$1"

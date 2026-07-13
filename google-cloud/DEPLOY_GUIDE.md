@@ -172,4 +172,13 @@ Push to `develop` triggers deploy via `.github/workflows/cd-gcp.yml`.
 
 Uncomment `api_custom_domain` / `web_custom_domain` in `terraform.tfvars` and configure DNS per Terraform outputs (`api_domain_mapping_status`).
 
-Example: `izumi-vpl-api.vw-dev.com`, `izumi-vpl.vw-dev.com`
+| Env | Web domain | API domain (optional) |
+|-----|------------|------------------------|
+| dev | `izumi-vpl-v2.vw-dev.com` | `izumi-vpl-v2-api.vw-dev.com` |
+| stg | `vpl-stage.izumilogi.com` | `vpl-stage-api.izumilogi.com` |
+
+**Staging:** set GitHub Environment variable `GCP_NEXT_PUBLIC_BASE_URL_STAGING=https://vpl-stage.izumilogi.com` (and `GCP_NEXT_PUBLIC_API_URL_STAGING` to the API URL). Then run:
+
+```bash
+bash google-cloud/scripts/setup-stg-custom-domains.sh
+```
