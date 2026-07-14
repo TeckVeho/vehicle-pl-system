@@ -10,6 +10,7 @@ DUMP_PATH="${1:-}"
 PROJECT="${GCP_PROJECT_ID}"
 INSTANCE="${SQL_INSTANCE:-izumi-vpl-mysql-dev}"
 DATABASE="${SQL_DATABASE:-izumi-vehicle-pl-system}"
+RECREATE_DATABASE="${RECREATE_DATABASE:-false}"
 GCS_BUCKET="${GCS_IMPORT_BUCKET:-${GCP_STATE_BUCKET}}"
 GCS_OBJECT="db-imports/$(basename "${DUMP_PATH:-izumi-vehicle-pl-stage.sql}")"
 
@@ -33,6 +34,19 @@ sed -E \
   -e '/^SET @@SESSION.SQL_LOG_BIN=/d' \
   -e 's/DEFINER=`[^`]+`@`[^`]+`/DEFINER=CURRENT_USER/g' \
   "${DUMP_PATH}" > "${PREPARED}"
+
+if [[ "${RECREATE_DATABASE}" == "true" ]]; then
+  echo "==> Recreating database ${DATABASE}..."
+  gcloud sql databases delete "${DATABASE}" \
+    --instance="${INSTANCE}" \
+    --project="${PROJECT}" \
+    --quiet 2>/dev/null || true
+  gcloud sql databases create "${DATABASE}" \
+    --instance="${INSTANCE}" \
+    --project="${PROJECT}" \
+    --charset=utf8mb4 \
+    --collation=utf8mb4_0900_ai_ci
+fi
 
 echo "==> Ensuring Cloud SQL instance is RUNNABLE..."
 STATE="$(gcloud sql instances describe "${INSTANCE}" --project="${PROJECT}" --format='value(state)')"
