@@ -1,0 +1,15 @@
+# vehicle-pl-system — bootstrap (project izumi-vpl)
+# Replace PROJECT_NUMBER: gcloud projects describe izumi-vpl --format='value(projectNumber)'
+
+project_id = "izumi-vpl"
+region     = "asia-northeast1"
+
+state_bucket_name = "izumi-vpl-terraform-state"
+
+additional_artifact_registry_writer_members = [
+  "serviceAccount:REPLACE_WITH_PROJECT_NUMBER@cloudbuild.gserviceaccount.com",
+]
+
+artifact_cleanup_keep_count                 = 10
+artifact_cleanup_keep_tag_prefixes          = ["prod", "stg", "dev"]
+artifact_cleanup_delete_untagged_after_days = 7

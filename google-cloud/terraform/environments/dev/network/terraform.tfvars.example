@@ -1,0 +1,6 @@
+# vehicle-pl-system — network (izumi-vpl, single project)
+# Copy to terraform.tfvars per env: dev | stg | prod
+
+project_id = "izumi-vpl"
+
+# region + env_suffix injected by Terragrunt (live/{env}/network)
