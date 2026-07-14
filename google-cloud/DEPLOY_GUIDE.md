@@ -176,9 +176,16 @@ Uncomment `api_custom_domain` / `web_custom_domain` in `terraform.tfvars` and co
 |-----|------------|------------------------|
 | dev | `izumi-vpl-v2.vw-dev.com` | `izumi-vpl-v2-api.vw-dev.com` |
 | stg | `vpl-stage.izumilogi.com` | `vpl-stage-api.izumilogi.com` |
+| prod | `vpl.izumilogi.com` | `vpl-api.izumilogi.com` |
 
 **Staging:** set GitHub Environment variable `GCP_NEXT_PUBLIC_BASE_URL_STAGING=https://vpl-stage.izumilogi.com` (and `GCP_NEXT_PUBLIC_API_URL_STAGING` to the API URL). Then run:
 
 ```bash
 bash google-cloud/scripts/setup-stg-custom-domains.sh
+```
+
+**Production:** set `GCP_NEXT_PUBLIC_BASE_URL_PRODUCTION` / `GCP_NEXT_PUBLIC_API_URL_PRODUCTION`, then:
+
+```bash
+bash google-cloud/scripts/setup-prod-custom-domains.sh
 ```

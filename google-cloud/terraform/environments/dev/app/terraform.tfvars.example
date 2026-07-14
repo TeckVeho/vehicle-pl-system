@@ -24,6 +24,9 @@ web_env_vars = {
 
 resource_tier = "tier3"
 
+# tier3 default 256Mi can OOM Node+Prisma on API; override if login/sync fails with HTTP 503.
+# cloud_run_api_memory = "512Mi"
+
 sql_database_name = "vehicle_pl_system"
 
 enable_gcs       = false

@@ -51,7 +51,8 @@ authRouter.post("/login", async (req: Request, res: Response) => {
         role: user.role,
       });
       setAuthCookie(res, token);
-      res.json({ success: true });
+      // External systems (IC VplClient) use Bearer token from JSON; browser uses cookie.
+      res.json({ success: true, token });
       return;
     }
 
