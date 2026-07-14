@@ -1,0 +1,16 @@
+.git
+.github
+.cursor
+node_modules
+backend/node_modules
+**/.next
+**/dist
+**/coverage
+**/.env
+**/.env.*
+!**/.env.example
+docs
+*.md
+!google-cloud/**/*.md
+backend/dev.db
+backend/logs

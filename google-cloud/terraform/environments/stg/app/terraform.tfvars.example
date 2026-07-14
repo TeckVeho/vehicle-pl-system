@@ -1,0 +1,53 @@
+# vehicle-pl-system — stg/app (single project izumi-vpl)
+# Copy to terraform.tfvars (gitignored). Secrets via Secret Manager only.
+#
+# Resource names (project_id + env_suffix):
+#   Cloud Run : izumi-vpl-api-stg, izumi-vpl-web-stg, izumi-vpl-migrate-stg
+#   Cloud SQL : izumi-vpl-mysql-stg
+#   VPC       : izumi-vpl-vpc-stg
+#   Secrets   : izumi-vpl-jwt-secret-stg, ...
+#   Images    : izumi-vpl-api:stage, izumi-vpl-web:stage (Artifact Registry tag)
+
+project_id = "izumi-vpl"
+env_suffix = "stg"
+
+container_image     = "asia-northeast1-docker.pkg.dev/izumi-vpl/izumi-vpl-docker/izumi-vpl-api:stage"
+web_container_image = "asia-northeast1-docker.pkg.dev/izumi-vpl/izumi-vpl-docker/izumi-vpl-web:stage"
+
+container_port     = 8080
+web_container_port = 3000
+
+api_custom_domain = "vpl-stage-api.izumilogi.com"
+web_custom_domain = "vpl-stage.izumilogi.com"
+
+env_vars = {
+  NODE_ENV = "production"
+  TIMEZONE = "Asia/Tokyo"
+}
+
+web_env_vars = {
+  NODE_ENV = "production"
+}
+
+resource_tier = "tier3"
+
+sql_database_name = "izumi_vehicle_pl_system"
+
+enable_gcs       = false
+enable_cloud_sql = true
+network_remote_state_bucket = "izumi-vpl-terraform-state"
+network_remote_state_prefix = "network/stg"
+
+enable_sql_night_weekend_schedule = true
+enable_cron_cloud_scheduler       = false
+
+allow_unauthenticated     = false
+allow_unauthenticated_web = false
+
+enable_env_iam_custom_roles = true
+
+api_secret_env_from_sm = [
+  { env_name = "JWT_SECRET", secret_id = "izumi-vpl-jwt-secret-stg", version = "latest" },
+  { env_name = "GOOGLE_SERVICE_ACCOUNT_JSON", secret_id = "izumi-vpl-google-sa-json-stg", version = "latest" },
+  { env_name = "GOOGLE_DRIVE_FOLDER_ID", secret_id = "izumi-vpl-google-drive-folder-stg", version = "latest" },
+]
