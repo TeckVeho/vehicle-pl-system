@@ -25,6 +25,7 @@ const { prismaMock } = vi.hoisted(() => ({
     course: {
       findFirst: vi.fn(),
       findUnique: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
       create: vi.fn(),
       update: vi.fn(),
       aggregate: vi.fn(),
@@ -41,6 +42,11 @@ const { prismaMock } = vi.hoisted(() => ({
       findMany: vi.fn(),
       deleteMany: vi.fn(),
       createMany: vi.fn(),
+      upsert: vi.fn(),
+    },
+    dailyAtmtcRun: {
+      deleteMany: vi.fn(),
+      create: vi.fn(),
       upsert: vi.fn(),
     },
     dailyOperatingRecord: { upsert: vi.fn() },
@@ -65,6 +71,9 @@ vi.mock("../lib/salary-run-count-allocation.js", () => ({
 }));
 vi.mock("../lib/location-expense-allocation.js", () => ({
   runLocationExpenseAllocation: vi.fn().mockResolvedValue({ vehiclesUpdated: 0, recordsUpdated: 0 }),
+}));
+vi.mock("../lib/course-allocation-trigger.js", () => ({
+  runCourseAllocationScope: vi.fn().mockResolvedValue([]),
 }));
 
 import { createApp } from "../app.js";
@@ -471,7 +480,7 @@ describe("sync route contracts", () => {
         assignmentsUpserted: 0,
         operatingUpserted: 0,
       });
-      expect(res.body).toHaveProperty("salaryAllocation");
+      expect(res.body).toHaveProperty("courseAllocation");
       expect(prismaMock.dataSyncLog.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({

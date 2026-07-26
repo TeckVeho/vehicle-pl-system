@@ -10,6 +10,7 @@ const { downloadMock, readXlsxMock, readSheetNamesMock, listPlFilesMock, prismaM
       location: { findUnique: vi.fn() },
       vehicle: { findMany: vi.fn() },
       accountItem: { findMany: vi.fn() },
+      course: { findMany: vi.fn().mockResolvedValue([]) },
       locationDriveSyncMeta: { findUnique: vi.fn() },
       driveSpreadsheetRevenueLine: { findMany: vi.fn() },
     },
@@ -45,6 +46,7 @@ describe("getRevenueFromSpreadsheets", () => {
     listPlFilesMock.mockResolvedValue([]);
     prismaMock.locationDriveSyncMeta.findUnique.mockResolvedValue(null);
     prismaMock.driveSpreadsheetRevenueLine.findMany.mockResolvedValue([]);
+    prismaMock.course.findMany.mockResolvedValue([]);
   });
 
   afterEach(() => {

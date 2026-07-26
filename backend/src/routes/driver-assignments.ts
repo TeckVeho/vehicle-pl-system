@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma.js";
 import { requireRole, ROLES } from "../lib/auth.js";
 import { runDriverAllocation } from "../lib/driver-allocation.js";
 import { runSalaryRunCountAllocation } from "../lib/salary-run-count-allocation.js";
+import { runCourseAllocationScope } from "../lib/course-allocation-trigger.js";
 
 export const driverAssignmentsRouter = Router();
 
@@ -140,9 +141,10 @@ driverAssignmentsRouter.post("/sync", requireRole(ROLES.MASTER), async (req: Req
     }
 
     // 配賦計算を実行（対象拠点の車両のみ）
-    const [allocationResult, salaryAllocationResult] = await Promise.all([
+    const [allocationResult, salaryAllocationResult, courseAllocation] = await Promise.all([
       runDriverAllocation(yearMonthStr, locId),
       runSalaryRunCountAllocation(yearMonthStr, locId),
+      runCourseAllocationScope(yearMonthStr, locId),
     ]);
 
     await prisma.dataSyncLog.create({
@@ -160,6 +162,7 @@ driverAssignmentsRouter.post("/sync", requireRole(ROLES.MASTER), async (req: Req
       upserted,
       allocation: allocationResult,
       salaryAllocation: salaryAllocationResult,
+      courseAllocation,
       ...(errors.length > 0 && { errors }),
     });
   } catch (e) {
