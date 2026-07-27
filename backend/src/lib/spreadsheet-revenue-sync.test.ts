@@ -5,6 +5,10 @@ const txApi = vi.hoisted(() => ({
     deleteMany: vi.fn(),
     createMany: vi.fn(),
   },
+  driveSpreadsheetRevenueCourseLine: {
+    deleteMany: vi.fn(),
+    createMany: vi.fn(),
+  },
   locationDriveSyncMeta: {
     upsert: vi.fn(),
   },
@@ -14,6 +18,7 @@ const prismaMock = vi.hoisted(() => ({
   location: { findUnique: vi.fn() },
   vehicle: { findMany: vi.fn() },
   accountItem: { findMany: vi.fn() },
+  course: { findMany: vi.fn().mockResolvedValue([]) },
   $transaction: vi.fn(async (fn: (t: typeof txApi) => Promise<void>) => {
     await fn(txApi);
   }),
@@ -28,6 +33,10 @@ vi.mock("./google-drive-client.js", () => ({
 vi.mock("read-excel-file/node", () => ({
   default: vi.fn(),
   readSheetNames: vi.fn(),
+}));
+
+vi.mock("./course-allocation-trigger.js", () => ({
+  runCourseAllocationScope: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("./prisma.js", () => ({

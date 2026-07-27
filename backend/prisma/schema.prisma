@@ -39,6 +39,9 @@ model Location {
   calculationParameters       LocationCalculationParameter[]
   driveSpreadsheetRevenueSyncMetas LocationDriveSyncMeta[]
   driveSpreadsheetRevenueLines     DriveSpreadsheetRevenueLine[]
+  driveSpreadsheetRevenueCourseLines DriveSpreadsheetRevenueCourseLine[]
+  dailyAtmtcRuns                  DailyAtmtcRun[]
+  courseMonthlyRecords            CourseMonthlyRecord[]
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
 }
@@ -89,12 +92,77 @@ model Course {
   sortOrder  Int      @default(0)
   externalId String?  // 外部システム連携用
   vehicles   Vehicle[]
+  dailyAtmtcRuns DailyAtmtcRun[]
+  courseMonthlyRecords CourseMonthlyRecord[]
+  driveSpreadsheetRevenueCourseLines DriveSpreadsheetRevenueCourseLine[]
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   @@unique([locationId, code])
   @@index([locationId])
   @@index([externalId])
+}
+
+/// ATMTC 運行ファクト（コース帰属の正本）
+model DailyAtmtcRun {
+  id               String   @id @default(cuid())
+  locationId       String
+  location         Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  date             String   // YYYY-MM-DD
+  yearMonth        String   // YYYY-MM
+  vehicleId        String
+  vehicle          Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  driverId         String?
+  driver           Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  courseId         String?
+  course           Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  courseExternalId String?
+  weight           Float    @default(1)
+  sourceTxnId      String?  @unique
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([yearMonth, locationId])
+  @@index([yearMonth, vehicleId])
+  @@index([yearMonth, courseId])
+}
+
+/// コース×勘定科目×月次（損益コース表示の正本）
+model CourseMonthlyRecord {
+  id            String      @id @default(cuid())
+  locationId    String
+  location      Location    @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  courseSlotKey String      // courseId or "__no_course__"
+  courseId      String?
+  course        Course?     @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  accountItemId String
+  accountItem   AccountItem @relation(fields: [accountItemId], references: [id], onDelete: Cascade)
+  yearMonth     String
+  amount        Float       @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([locationId, yearMonth, courseSlotKey, accountItemId], map: "cmr_loc_ym_slot_ai_key")
+  @@index([yearMonth, locationId])
+  @@index([courseId])
+}
+
+/// 売上スプレッドシート列を Course.code で突合したスナップショット
+model DriveSpreadsheetRevenueCourseLine {
+  id            String      @id @default(cuid())
+  locationId    String
+  location      Location    @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  yearMonth     String
+  courseId      String
+  course        Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  accountItemId String
+  accountItem   AccountItem @relation(fields: [accountItemId], references: [id], onDelete: Cascade)
+  amount        Float       @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([locationId, yearMonth, courseId, accountItemId], map: "dsr_course_rev_uq")
+  @@index([locationId, yearMonth])
 }
 
 model Vehicle {
@@ -112,6 +180,7 @@ model Vehicle {
   driveSpreadsheetRevenueLines DriveSpreadsheetRevenueLine[]
   dailyOperatingRecords DailyOperatingRecord[]
   dailyDriverAssignments DailyDriverAssignment[]
+  dailyAtmtcRuns        DailyAtmtcRun[]
   monthlyCosts          VehicleMonthlyCost[]
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
@@ -184,6 +253,7 @@ model Driver {
   name                  String
   externalId            String?                // 外部システム連携用
   dailyAssignments      DailyDriverAssignment[]
+  dailyAtmtcRuns        DailyAtmtcRun[]
   monthlyAmounts        DriverMonthlyAmount[]
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
@@ -243,6 +313,8 @@ model AccountItem {
   monthlyRecords      MonthlyRecord[]
   recordHistories     MonthlyRecordHistory[]
   driveSpreadsheetRevenueLines DriveSpreadsheetRevenueLine[]
+  driveSpreadsheetRevenueCourseLines DriveSpreadsheetRevenueCourseLine[]
+  courseMonthlyRecords CourseMonthlyRecord[]
   driverMonthlyAmounts DriverMonthlyAmount[]
   locationMonthlyExpenses LocationMonthlyExpense[]
   createdAt           DateTime       @default(now())

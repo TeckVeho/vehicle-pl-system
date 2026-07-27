@@ -1,31 +1,54 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
-import { runSalaryRunCountAllocation } from "../lib/salary-run-count-allocation.js";
 import { syncDailyOperatingRecordsFromRows, type OperatingRow } from "../lib/daily-operating-records-sync.js";
+import { runCourseAllocationScope } from "../lib/course-allocation-trigger.js";
 
 export const atmtcTransactionsRouter = Router();
 
 /** Stored in DataSyncLog.syncType — keep in sync with FE sync-logs labels. */
 export const ATMTC_TRANSACTIONS_SYNC_TYPE = "atmtc_transactions";
 
+async function resolveCourseId(
+  locId: string,
+  fields: {
+    courseId?: unknown;
+    courseExternalId?: unknown;
+    courseCode?: unknown;
+  }
+): Promise<{ courseId: string | null; courseExternalId: string | null }> {
+  const { courseId, courseExternalId, courseCode } = fields;
+  if (courseId) {
+    const c = await prisma.course.findFirst({
+      where: { id: String(courseId), locationId: locId },
+      select: { id: true, externalId: true },
+    });
+    if (c) return { courseId: c.id, courseExternalId: c.externalId };
+  }
+  if (courseExternalId) {
+    const c = await prisma.course.findFirst({
+      where: { externalId: String(courseExternalId), locationId: locId },
+      select: { id: true, externalId: true },
+    });
+    if (c) return { courseId: c.id, courseExternalId: c.externalId };
+  }
+  if (courseCode) {
+    const codeStr = String(courseCode).trim();
+    const c = await prisma.course.findUnique({
+      where: { locationId_code: { locationId: locId, code: codeStr } },
+      select: { id: true, externalId: true },
+    });
+    if (c) return { courseId: c.id, courseExternalId: c.externalId };
+  }
+  return { courseId: null, courseExternalId: courseExternalId ? String(courseExternalId) : null };
+}
+
 /**
- * ATMTC / IC: one request updates DailyDriverAssignment + aggregated DailyOperatingRecord
- * (1 input row = 1 run by default, summed per vehicle×day), then salary run-count allocation only
- * (no runDriverAllocation — PM B4.2).
- *
- * POST /api/atmtc-transactions/sync
- * Body: {
- *   yearMonth: "2026-03",
- *   locationId?: string,
- *   departmentId?: string,  // location code → Location.id
- *   records: [
- *     { driverExternalId?, vehicleExternalId?, driverId?, vehicleId?, date: "2026-03-05", weight?: number }
- *   ]
- * }
+ * ATMTC / IC: DailyAtmtcRun + assignment + operating records.
+ * 給与配賦はタイムシート経路のみ。ここではコース別集計を再計算する。
  */
 atmtcTransactionsRouter.post("/sync", async (req: Request, res: Response) => {
   try {
-    const { yearMonth, locationId, departmentId, records } = req.body;
+    const { yearMonth, locationId, departmentId, records, replaceExisting } = req.body;
 
     let locId: string | null = locationId ? String(locationId) : null;
     if (!locId && departmentId) {
@@ -51,8 +74,15 @@ atmtcTransactionsRouter.post("/sync", async (req: Request, res: Response) => {
 
     const errors: string[] = [];
     let assignmentsUpserted = 0;
-    /** vehicleId|date -> summed weight (runs) */
+    let atmtcRunsUpserted = 0;
     const runCountByVehicleDate = new Map<string, number>();
+
+    const shouldReplace = replaceExisting !== false;
+    if (locId && shouldReplace) {
+      await prisma.dailyAtmtcRun.deleteMany({
+        where: { locationId: locId, yearMonth: yearMonthStr },
+      });
+    }
 
     for (const r of records) {
       const {
@@ -60,8 +90,12 @@ atmtcTransactionsRouter.post("/sync", async (req: Request, res: Response) => {
         driverExternalId,
         vehicleId,
         vehicleExternalId,
+        courseId,
+        courseExternalId,
+        courseCode,
         date,
         weight: weightRaw,
+        sourceTxnId,
       } = r;
 
       if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(String(date).trim())) {
@@ -77,6 +111,7 @@ atmtcTransactionsRouter.post("/sync", async (req: Request, res: Response) => {
 
       const w = Number(weightRaw);
       const weight = Number.isFinite(w) && w >= 0 ? w : 1;
+      const dateStr = String(date).trim();
 
       let did: string | null = null;
       if (driverId) {
@@ -102,6 +137,7 @@ atmtcTransactionsRouter.post("/sync", async (req: Request, res: Response) => {
       }
 
       let vid: string | null = null;
+      let vehicleLocId = locId;
       if (vehicleId) {
         const v = await prisma.vehicle.findUnique({
           where: { id: String(vehicleId) },
@@ -109,6 +145,7 @@ atmtcTransactionsRouter.post("/sync", async (req: Request, res: Response) => {
         });
         if (v && (!locId || v.locationId === locId)) {
           vid = v.id;
+          if (!vehicleLocId) vehicleLocId = v.locationId;
         }
       }
       if (!vid && vehicleExternalId) {
@@ -117,50 +154,92 @@ atmtcTransactionsRouter.post("/sync", async (req: Request, res: Response) => {
             externalId: String(vehicleExternalId),
             ...(locId ? { locationId: locId } : {}),
           },
-          select: { id: true },
+          select: { id: true, locationId: true },
         });
         if (v) {
           vid = v.id;
+          if (!vehicleLocId) vehicleLocId = v.locationId;
         }
       }
 
-      if (!did) {
-        errors.push(`Driver not found for record: date=${date}`);
-        continue;
-      }
       if (!vid) {
         errors.push(`Vehicle not found for record: date=${date}`);
         continue;
       }
 
-      await prisma.dailyDriverAssignment.upsert({
-        where: {
-          driverId_vehicleId_date: {
+      if (!vehicleLocId) {
+        vehicleLocId = (
+          await prisma.vehicle.findUnique({
+            where: { id: vid },
+            select: { locationId: true },
+          })
+        )?.locationId ?? null;
+      }
+      if (!vehicleLocId) {
+        errors.push(`Location could not be resolved for vehicle on date=${date}`);
+        continue;
+      }
+
+      const courseResolved = await resolveCourseId(vehicleLocId, {
+        courseId,
+        courseExternalId,
+        courseCode,
+      });
+
+      const runData = {
+        locationId: vehicleLocId,
+        date: dateStr,
+        yearMonth: yearMonthStr,
+        vehicleId: vid,
+        driverId: did,
+        courseId: courseResolved.courseId,
+        courseExternalId: courseResolved.courseExternalId,
+        weight,
+      };
+
+      if (sourceTxnId) {
+        await prisma.dailyAtmtcRun.upsert({
+          where: { sourceTxnId: String(sourceTxnId) },
+          create: { ...runData, sourceTxnId: String(sourceTxnId) },
+          update: runData,
+        });
+      } else {
+        await prisma.dailyAtmtcRun.create({
+          data: runData,
+        });
+      }
+      atmtcRunsUpserted++;
+
+      if (did) {
+        await prisma.dailyDriverAssignment.upsert({
+          where: {
+            driverId_vehicleId_date: {
+              driverId: did,
+              vehicleId: vid,
+              date: dateStr,
+            },
+          },
+          create: {
             driverId: did,
             vehicleId: vid,
-            date: String(date).trim(),
+            date: dateStr,
+            yearMonth: yearMonthStr,
           },
-        },
-        create: {
-          driverId: did,
-          vehicleId: vid,
-          date: String(date).trim(),
-          yearMonth: yearMonthStr,
-        },
-        update: {},
-      });
-      assignmentsUpserted++;
+          update: {},
+        });
+        assignmentsUpserted++;
+      }
 
-      const aggKey = `${vid}|${String(date).trim()}`;
+      const aggKey = `${vid}|${dateStr}`;
       runCountByVehicleDate.set(aggKey, (runCountByVehicleDate.get(aggKey) ?? 0) + weight);
     }
 
     const operatingRows: OperatingRow[] = [];
     for (const [key, runCount] of Array.from(runCountByVehicleDate.entries())) {
-      const [vehicleId, date] = key.split("|");
+      const [vehicleIdKey, dateKey] = key.split("|");
       operatingRows.push({
-        vehicleId,
-        date,
+        vehicleId: vehicleIdKey,
+        date: dateKey,
         runCount,
         isOperating: true,
       });
@@ -173,7 +252,7 @@ atmtcTransactionsRouter.post("/sync", async (req: Request, res: Response) => {
     });
     errors.push(...operatingResult.errors);
 
-    const salaryAllocationResult = await runSalaryRunCountAllocation(yearMonthStr, locId);
+    const courseAllocation = await runCourseAllocationScope(yearMonthStr, locId);
 
     await prisma.dataSyncLog.create({
       data: {
@@ -188,8 +267,9 @@ atmtcTransactionsRouter.post("/sync", async (req: Request, res: Response) => {
     res.status(200).json({
       success: true,
       assignmentsUpserted,
+      atmtcRunsUpserted,
       operatingUpserted: operatingResult.upserted,
-      salaryAllocation: salaryAllocationResult,
+      courseAllocation,
       ...(errors.length > 0 && { errors }),
     });
   } catch (e) {
