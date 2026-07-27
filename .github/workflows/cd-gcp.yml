@@ -1,7 +1,21 @@
 # GCP — deploy via Cloud Build when code is merged into develop | staging | production
 #
-# GitHub repo: TeckVeho/vehicle-pl-system
-# Setup: google-cloud/cloudbuild/GITHUB_ACTIONS_WIF.md
+# Triggers only on push to those branches (merge commit = push). PRs and other branches do not deploy.
+# Path filter on push: backend/** and/or frontend/** → backend | frontend | full; neither → skip.
+# workflow_dispatch: manual deploy (optional); same branch must be develop | staging | production.
+#
+# GitHub repo: TeckVeho/vehicle-pl-system (WIF attribute-condition must match)
+#
+# Credentials: repository Secrets (no admin needed for Environments):
+#   GCP_PROJECT_ID, GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT
+# Repository Variables (per branch suffix):
+#   GCP_NEXT_PUBLIC_API_URL_DEVELOP / GCP_NEXT_PUBLIC_BASE_URL_DEVELOP
+#   GCP_NEXT_PUBLIC_API_URL_STAGING / GCP_NEXT_PUBLIC_BASE_URL_STAGING
+#   GCP_NEXT_PUBLIC_API_URL_PRODUCTION / GCP_NEXT_PUBLIC_BASE_URL_PRODUCTION
+# Optional: GCP_IMAGE_TAG (repo variable)
+#
+# One-shot setup: bash google-cloud/scripts/setup-github-actions-cicd.sh
+# Manual WIF/IAM: google-cloud/cloudbuild/GITHUB_ACTIONS_WIF.md
 
 name: CD GCP
 

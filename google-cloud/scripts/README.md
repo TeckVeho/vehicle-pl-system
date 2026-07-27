@@ -7,3 +7,4 @@
 | `create-dev-secrets.sh` | Create JWT + Google Drive secrets in Secret Manager |
 | `run-migrate-job.sh` | Execute Prisma migrate Cloud Run Job |
 | `grant-github-actions-iam.sh` | WIF + IAM for GitHub Actions CI |
+| `setup-github-actions-cicd.sh` | One-shot: WIF/IAM + GitHub repository secrets/variables (like izumi-maintenance-v2) |
