@@ -10,6 +10,8 @@ import {
 } from "../lib/vehicle-costs.js";
 import { getPreviousYearMonth } from "../lib/salary-daily-proration.js";
 import { isLocationExpenseProrationAccount } from "../lib/location-expense-proration.js";
+import { NO_COURSE_SLOT_KEY, isCourseReadOnlyAccount } from "../lib/course-allocation.js";
+import { buildAtmtcCourseVehicleLinks } from "../lib/atmtc-course-vehicle-links.js";
 
 /** 手入力専用（CSV/API一括登録不可）の勘定科目名 */
 const MANUAL_INPUT_ONLY_NAMES = ["その他", "不動産収入", "人材派遣収入"];
@@ -236,11 +238,14 @@ incomeStatementRouter.get("/", async (req: Request, res: Response) => {
     }
   }
 
-  // 給与系科目（乗務員給料・通勤手当）は前月分の MonthlyRecord をそのまま表示（乗車回数ベースで配賦済み）
+  // 給与系: 当月の配賦済み MonthlyRecord を優先。無い場合のみ前月を表示
   for (const r of prevMonthRecords) {
     const a = accountItemsForCost.find((x) => x.id === r.accountItemId);
     if (a && (a.code === "6138" || a.code === "6147")) {
-      recordMap.set(`${r.vehicleId}-${r.accountItemId}`, Number(r.amount));
+      const key = `${r.vehicleId}-${r.accountItemId}`;
+      if (!recordMap.has(key)) {
+        recordMap.set(key, Number(r.amount));
+      }
     }
   }
 
@@ -249,9 +254,117 @@ incomeStatementRouter.get("/", async (req: Request, res: Response) => {
     recordMap.set(`${line.vehicleId}-${line.accountItemId}`, Number(line.amount));
   }
 
+  const [coursesAtLocation, courseMonthlyRows, atmtcLinks, accountItemsForReadOnly] =
+    await Promise.all([
+      prisma.course.findMany({
+        where: { locationId },
+        select: { id: true, name: true, code: true, sortOrder: true },
+        orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+      }),
+      prisma.courseMonthlyRecord.findMany({
+        where: { locationId, yearMonth },
+      }),
+      buildAtmtcCourseVehicleLinks(yearMonth, locationId),
+      prisma.accountItem.findMany({
+        where: accountItemEffectiveWhere(yearMonth),
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          category: true,
+          isDriverRelated: true,
+        },
+      }),
+    ]);
+
+  const courseRecords: Record<string, number> = {};
+  for (const row of courseMonthlyRows) {
+    courseRecords[`${row.courseSlotKey}-${row.accountItemId}`] = Number(row.amount);
+  }
+
+  const hasNoCourseBucket = courseMonthlyRows.some(
+    (r) => r.courseSlotKey === NO_COURSE_SLOT_KEY
+  );
+  const activeCourseIds = new Set<string>();
+  for (const row of courseMonthlyRows) {
+    if (row.courseId) activeCourseIds.add(row.courseId);
+  }
+  for (const slotKey of atmtcLinks.vehicleIdsByCourseSlot.keys()) {
+    if (slotKey !== NO_COURSE_SLOT_KEY) activeCourseIds.add(slotKey);
+  }
+  const hasAtmtcOrCoursePlData =
+    activeCourseIds.size > 0 || hasNoCourseBucket;
+  const visibleCourses = hasAtmtcOrCoursePlData
+    ? coursesAtLocation.filter((c) => activeCourseIds.has(c.id))
+    : coursesAtLocation;
+
+  const sortVehicleIds = (ids: string[]) =>
+    [...ids].sort((a, b) => {
+      const va = vehicles.find((x) => x.id === a)?.vehicleNo ?? a;
+      const vb = vehicles.find((x) => x.id === b)?.vehicleNo ?? b;
+      return va.localeCompare(vb, "ja");
+    });
+
+  const plCourses = [
+    ...visibleCourses.map((c) => {
+      const ids = sortVehicleIds(
+        atmtcLinks.vehicleIdsByCourseSlot.get(c.id) ?? []
+      );
+      const pctMap =
+        atmtcLinks.vehicleSharePercentByCourseSlot.get(c.id) ?? new Map();
+      return {
+        slotKey: c.id,
+        id: c.id,
+        name: c.name,
+        code: c.code,
+        vehicleIds: ids,
+        vehicleShares: ids.map((vehicleId) => ({
+          vehicleId,
+          sharePercent: pctMap.get(vehicleId) ?? 0,
+        })),
+      };
+    }),
+    ...(hasNoCourseBucket
+      ? (() => {
+          const ids = sortVehicleIds(
+            atmtcLinks.vehicleIdsByCourseSlot.get(NO_COURSE_SLOT_KEY) ?? []
+          );
+          const pctMap =
+            atmtcLinks.vehicleSharePercentByCourseSlot.get(NO_COURSE_SLOT_KEY) ??
+            new Map();
+          return [
+            {
+              slotKey: NO_COURSE_SLOT_KEY,
+              id: null as string | null,
+              name: "コースなし",
+              code: null as string | null,
+              vehicleIds: ids,
+              vehicleShares: ids.map((vehicleId) => ({
+                vehicleId,
+                sharePercent: pctMap.get(vehicleId) ?? 0,
+              })),
+            },
+          ];
+        })()
+      : []),
+  ];
+
+  const vehiclesForPl = vehicles.map((v) => ({
+    ...v,
+    atmtcCourseShares: atmtcLinks.courseSharesByVehicleId.get(v.id) ?? [],
+    atmtcHasUncourseRuns: atmtcLinks.vehicleIdsWithUncourseRuns.has(v.id),
+  }));
+
+  const courseReadOnlyAccountItemIds = accountItemsForReadOnly
+    .filter(isCourseReadOnlyAccount)
+    .map((a) => a.id);
+
   res.json({
-    vehicles,
+    vehicles: vehiclesForPl,
+    courses: plCourses,
     records: Object.fromEntries(recordMap),
+    courseRecords,
+    courseReadOnlyAccountItemIds,
     yearMonth,
     lastUpdatedAt: lastUpdatedAt ? lastUpdatedAt.toISOString() : null,
   });

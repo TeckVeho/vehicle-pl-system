@@ -16,8 +16,17 @@ import { useAuthStore, canEditPL } from "@/stores/authStore";
 import { useYearMonthStore } from "@/stores/yearMonthStore";
 
 /** Bump when cache shape/API contract changes so stale empty payloads are dropped */
-const CACHE_KEY_PREFIX = "income-statement:v2";
+const CACHE_KEY_PREFIX = "income-statement:v6";
 const METADATA_CACHE_KEY_PREFIX = "income-statement:metadata:v2";
+
+interface PlCourseColumn {
+  slotKey: string;
+  id: string | null;
+  name: string;
+  code: string | null;
+  vehicleIds?: string[];
+  vehicleShares?: Array<{ vehicleId: string; sharePercent: number }>;
+}
 
 function getLocationCacheKey(yearMonth: string, locationId: string) {
   return `${CACHE_KEY_PREFIX}:${yearMonth}:${locationId}`;
@@ -43,6 +52,9 @@ function writeLocationCache(
   data: {
     vehicles: unknown[];
     records: Record<string, number>;
+    courses?: PlCourseColumn[];
+    courseRecords?: Record<string, number>;
+    courseReadOnlyAccountItemIds?: string[];
     lastUpdatedAt: string | null;
   }
 ) {
@@ -97,6 +109,13 @@ interface Vehicle {
   serviceType: string | null;
   location: Location;
   course?: { id: string; name: string; code: string } | null;
+  atmtcCourseShares?: Array<{
+    id: string | null;
+    name: string;
+    code: string | null;
+    sharePercent: number;
+  }>;
+  atmtcHasUncourseRuns?: boolean;
 }
 
 interface AccountItem {
@@ -117,6 +136,11 @@ function IncomeStatementContent() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [accountItems, setAccountItems] = useState<AccountItem[]>([]);
   const [records, setRecords] = useState<Record<string, number>>({});
+  const [courses, setCourses] = useState<PlCourseColumn[]>([]);
+  const [courseRecords, setCourseRecords] = useState<Record<string, number>>({});
+  const [courseReadOnlyAccountItemIds, setCourseReadOnlyAccountItemIds] = useState<
+    string[]
+  >([]);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
 
   // 年月は共有ストアを使用（ページ間で選択を保持）
@@ -160,15 +184,23 @@ function IncomeStatementContent() {
   /** 勘定科目ごとの登録状況（revenue/expenseのみ、拠点内で1件以上レコードがあれば登録済み） */
   const importStatus = useMemo(() => {
     const status: Record<string, boolean> = {};
+    const useCourseRevenue = courses.length > 0;
     for (const item of accountItems) {
       if (item.category !== "revenue" && item.category !== "expense") continue;
-      const hasRecord = vehicles.some(
-        (v) => records[`${v.id}-${item.id}`] !== undefined
-      );
+      let hasRecord = false;
+      if (useCourseRevenue && item.category === "revenue") {
+        hasRecord = courses.some(
+          (c) => (courseRecords[`${c.slotKey}-${item.id}`] ?? 0) !== 0
+        );
+      } else {
+        hasRecord = vehicles.some(
+          (v) => (records[`${v.id}-${item.id}`] ?? 0) !== 0
+        );
+      }
       status[item.id] = hasRecord;
     }
     return status;
-  }, [accountItems, vehicles, records]);
+  }, [accountItems, vehicles, records, courses, courseRecords]);
 
   const filteredAccountItems = useMemo(() => {
     let base = accountItems;
@@ -223,14 +255,24 @@ function IncomeStatementContent() {
       ym: string,
       locId: string,
       isRevalidate = false
-    ): Promise<{ vehicles: Vehicle[]; records: Record<string, number>; lastUpdatedAt: string | null }> => {
+    ): Promise<{
+      vehicles: Vehicle[];
+      records: Record<string, number>;
+      courses: PlCourseColumn[];
+      courseRecords: Record<string, number>;
+      courseReadOnlyAccountItemIds: string[];
+      lastUpdatedAt: string | null;
+    } | null> => {
       if (!isRevalidate) setDataLoading(true);
       try {
         const params = new URLSearchParams({ yearMonth: ym, locationId: locId });
         const res = await fetchApi(`/api/income-statement?${params}`);
         let data: {
           vehicles?: Vehicle[];
+          courses?: PlCourseColumn[];
           records?: Record<string, number>;
+          courseRecords?: Record<string, number>;
+          courseReadOnlyAccountItemIds?: string[];
           lastUpdatedAt?: string | null;
           error?: string;
         };
@@ -241,14 +283,21 @@ function IncomeStatementContent() {
           return {
             vehicles: [],
             records: {},
+            courses: [],
+            courseRecords: {},
+            courseReadOnlyAccountItemIds: [],
             lastUpdatedAt: null,
           };
         }
         if (!res.ok) {
           setApiError(data.error ?? `損益データの取得に失敗しました（${res.status}）`);
+          if (isRevalidate) return null;
           return {
             vehicles: [],
             records: {},
+            courses: [],
+            courseRecords: {},
+            courseReadOnlyAccountItemIds: [],
             lastUpdatedAt: null,
           };
         }
@@ -256,12 +305,18 @@ function IncomeStatementContent() {
         const result = {
           vehicles: data.vehicles ?? [],
           records: data.records || {},
+          courses: data.courses ?? [],
+          courseRecords: data.courseRecords ?? {},
+          courseReadOnlyAccountItemIds: data.courseReadOnlyAccountItemIds ?? [],
           lastUpdatedAt: data.lastUpdatedAt ?? null,
         };
 
         writeLocationCache(ym, locId, {
           vehicles: result.vehicles,
           records: result.records,
+          courses: result.courses,
+          courseRecords: result.courseRecords,
+          courseReadOnlyAccountItemIds: result.courseReadOnlyAccountItemIds,
           lastUpdatedAt: result.lastUpdatedAt,
         });
 
@@ -323,6 +378,9 @@ function IncomeStatementContent() {
     if (cached?.vehicles?.length) {
       setVehicles(cached.vehicles);
       setRecords(cached.records || {});
+      setCourses(cached.courses ?? []);
+      setCourseRecords(cached.courseRecords ?? {});
+      setCourseReadOnlyAccountItemIds(cached.courseReadOnlyAccountItemIds ?? []);
       setLastUpdatedAt(cached.lastUpdatedAt ?? null);
       setDataLoading(false);
     } else {
@@ -331,9 +389,12 @@ function IncomeStatementContent() {
 
     const isRevalidate = !!cached?.vehicles?.length;
     fetchLocationData(yearMonth, locationId, isRevalidate).then((result) => {
-      if (cancelled) return;
+      if (cancelled || result === null) return;
       setVehicles(result.vehicles);
       setRecords(result.records);
+      setCourses(result.courses);
+      setCourseRecords(result.courseRecords);
+      setCourseReadOnlyAccountItemIds(result.courseReadOnlyAccountItemIds);
       setLastUpdatedAt(result.lastUpdatedAt);
       setDataLoading(false);
     });
@@ -547,7 +608,10 @@ function IncomeStatementContent() {
         <PLTable
           accountItems={filteredAccountItems}
           vehicles={vehicles}
+          courses={courses}
           records={records}
+          courseRecords={courseRecords}
+          courseReadOnlyAccountItemIds={courseReadOnlyAccountItemIds}
           yearMonth={yearMonth}
           displayMode={displayMode}
           editMode={canEdit && editMode}
