@@ -35,6 +35,13 @@ interface Vehicle {
   serviceType: string | null;
   location: { id: string; code: string; name: string };
   course?: { id: string; name: string; code: string } | null;
+  atmtcCourseShares?: Array<{
+    id: string | null;
+    name: string;
+    code: string | null;
+    sharePercent: number;
+  }>;
+  atmtcHasUncourseRuns?: boolean;
 }
 
 export type DisplayMode = "course" | "vehicle";
@@ -43,22 +50,101 @@ export type DisplayMode = "course" | "vehicle";
 interface CourseGroup {
   id: string;
   name: string;
+  code?: string | null;
   vehicleIds: string[];
+  vehicleShares: Array<{ vehicleId: string; sharePercent: number }>;
+}
+
+export interface PlCourseColumn {
+  slotKey: string;
+  id: string | null;
+  name: string;
+  code: string | null;
+  vehicleIds?: string[];
+  vehicleShares?: Array<{ vehicleId: string; sharePercent: number }>;
+}
+
+const ALLOCATION_SHARE_INTRO = "ATMTC運行実績による当月の按分比率";
+
+function AllocationShareTooltipContent({
+  intro,
+  lines,
+}: {
+  intro: string;
+  lines: string[];
+}) {
+  if (lines.length === 0) return null;
+  return (
+    <div className="space-y-1 text-xs">
+      <p className="text-muted-foreground">{intro}</p>
+      <ul className="list-none space-y-0.5">
+        {lines.map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function formatVehicleHeaderLabel(
+  v: Pick<Vehicle, "vehicleNo" | "serviceType">
+): string {
+  if (v.serviceType?.trim()) {
+    return `${v.serviceType.trim()} ${v.vehicleNo}`;
+  }
+  return v.vehicleNo;
 }
 
 function formatVehicleDisplay(v: Vehicle) {
-  const courseName = v.course?.name ?? "コースなし";
-  const digitsOnly = v.vehicleNo.replace(/\D/g, "");
-  const last4 = digitsOnly.slice(-4) || v.vehicleNo;
-  const serviceLine = v.serviceType ? `${v.serviceType}（${last4}）` : `（${last4}）`;
-  const courseCount = v.course ? 1 : 0;
-  return { courseName, serviceLine, courseCount };
+  return { serviceLine: formatVehicleHeaderLabel(v) };
+}
+
+/** 車両列ヘッダ: 当月 ATMTC 実績コースを優先、無ければマスタ */
+function formatVehicleCourseSubtitle(v: Vehicle): {
+  label: string;
+  tooltipLines?: string[];
+  showTooltip: boolean;
+} {
+  const shares = v.atmtcCourseShares ?? [];
+  if (shares.length === 1) {
+    const s = shares[0];
+    const line =
+      s.sharePercent === 100
+        ? s.name
+        : `${s.name} … ${s.sharePercent}%`;
+    return {
+      label: "1コース",
+      tooltipLines: [line],
+      showTooltip: true,
+    };
+  }
+  if (shares.length > 1) {
+    return {
+      label: `${shares.length}コース`,
+      tooltipLines: shares.map((s) => `${s.name} … ${s.sharePercent}%`),
+      showTooltip: true,
+    };
+  }
+  if (v.atmtcHasUncourseRuns) {
+    return { label: "コースなし", showTooltip: false };
+  }
+  if (v.course?.name) {
+    return {
+      label: "1コース",
+      tooltipLines: [v.course.name],
+      showTooltip: true,
+    };
+  }
+  return { label: "コースなし", showTooltip: false };
 }
 
 interface PLTableProps {
   accountItems: AccountItem[];
   vehicles: Vehicle[];
+  courses?: PlCourseColumn[];
   records: Record<string, number>;
+  courseRecords?: Record<string, number>;
+  courseReadOnlyAccountItemIds?: string[];
   yearMonth: string;
   displayMode: DisplayMode;
   editMode?: boolean;
@@ -79,7 +165,10 @@ interface PLTableProps {
 function PLTableInner({
   accountItems,
   vehicles,
+  courses = [],
   records,
+  courseRecords = {},
+  courseReadOnlyAccountItemIds = [],
   yearMonth,
   displayMode,
   editMode = false,
@@ -106,20 +195,36 @@ function PLTableInner({
     [vehicles]
   );
 
-  /** コースごとに車両をグループ化（コース未割当は「コースなし」に集約） */
+  const readOnlyCourseItemIds = useMemo(
+    () => new Set(courseReadOnlyAccountItemIds),
+    [courseReadOnlyAccountItemIds]
+  );
+
+  const useApiCourseRecords = displayMode === "course" && courses.length > 0;
+
+  /** コースごとに車両をグループ化（APIコース列が無い場合のフォールバック） */
   const courseGroups = useMemo((): CourseGroup[] => {
+    if (displayMode === "course" && courses.length > 0) {
+      return courses.map((c) => ({
+        id: c.slotKey,
+        name: c.name,
+        code: c.code,
+        vehicleIds: c.vehicleIds ?? [],
+        vehicleShares: c.vehicleShares ?? [],
+      }));
+    }
     const courseMap = new Map<string, CourseGroup>();
     const NO_COURSE_KEY = "__no_course__";
     for (const v of vehicles) {
       const key = v.course?.id ?? NO_COURSE_KEY;
       const name = v.course?.name ?? "コースなし";
       if (!courseMap.has(key)) {
-        courseMap.set(key, { id: key, name, vehicleIds: [] });
+        courseMap.set(key, { id: key, name, vehicleIds: [], vehicleShares: [] });
       }
       courseMap.get(key)!.vehicleIds.push(v.id);
     }
     return Array.from(courseMap.values());
-  }, [vehicles]);
+  }, [vehicles, courses, displayMode]);
 
   type ComputedAmounts = {
     netRevenue: number;
@@ -150,10 +255,12 @@ function PLTableInner({
     for (const g of courseGroups) {
       const amountByItem = new Map<string, number>();
       for (const item of accountItems) {
-        const sum = g.vehicleIds.reduce(
-          (s, vid) => s + (records[`${vid}-${item.id}`] ?? 0),
-          0
-        );
+        const sum = useApiCourseRecords
+          ? (courseRecords[`${g.id}-${item.id}`] ?? 0)
+          : g.vehicleIds.reduce(
+              (s, vid) => s + (records[`${vid}-${item.id}`] ?? 0),
+              0
+            );
         amountByItem.set(item.id, sum);
       }
       const netRevenue = calcNetRevenue(amountByItem, revenueItemIds);
@@ -193,7 +300,7 @@ function PLTableInner({
       courseGroupAmountsMap: courseMap,
       totalByItemMap: totalMap,
     };
-  }, [vehicles, accountItems, records, courseGroups, displayMode, revenueItemIds, expenseItemIds]);
+  }, [vehicles, accountItems, records, courseGroups, displayMode, revenueItemIds, expenseItemIds, useApiCourseRecords, courseRecords]);
 
   function getCellValueFromComputed(
     vehicleId: string,
@@ -355,15 +462,15 @@ function PLTableInner({
             {displayMode === "course"
               ? courseGroups.map((g) => {
                   const vehicleCount = g.vehicleIds.length;
-                  const vehicleLabels = g.vehicleIds
-                    .map((vid) => {
-                      const v = vehicleMap.get(vid);
-                      const digits = v?.vehicleNo.replace(/\D/g, "") ?? "";
-                      const last4 = digits.slice(-4) || v?.vehicleNo || "-";
-                      return v?.serviceType ? `${v.serviceType}（${last4}）` : `（${last4}）`;
-                    })
-                    .join(", ");
-                  const tooltipText = vehicleLabels || "車両番号の情報がありません";
+                  const shareLines = g.vehicleShares
+                    .filter((s) => s.sharePercent > 0)
+                    .map((s) => {
+                      const v = vehicleMap.get(s.vehicleId);
+                      const label = v ? formatVehicleHeaderLabel(v) : s.vehicleId;
+                      return s.sharePercent === 100
+                        ? label
+                        : `${label} … ${s.sharePercent}%`;
+                    });
                   return (
                     <th
                       key={g.id}
@@ -373,10 +480,8 @@ function PLTableInner({
                       <div className="flex flex-col items-center gap-0.5">
                         <span>{g.name}</span>
                         {vehicleCount === 0 ? (
-                          <span className="text-muted-foreground font-normal text-[10px]">0台</span>
-                        ) : vehicleCount === 1 ? (
                           <span className="text-muted-foreground font-normal text-[10px]">
-                            {vehicleLabels}
+                            0台
                           </span>
                         ) : (
                           <Tooltip>
@@ -386,7 +491,10 @@ function PLTableInner({
                               </span>
                             </TooltipTrigger>
                             <TooltipContent side="bottom" className="max-w-[280px]">
-                              {tooltipText}
+                              <AllocationShareTooltipContent
+                                intro={ALLOCATION_SHARE_INTRO}
+                                lines={shareLines}
+                              />
                             </TooltipContent>
                           </Tooltip>
                         )}
@@ -395,7 +503,8 @@ function PLTableInner({
                   );
                 })
               : vehicles.map((v) => {
-                  const { courseName, serviceLine, courseCount } = formatVehicleDisplay(v);
+                  const { serviceLine } = formatVehicleDisplay(v);
+                  const courseSub = formatVehicleCourseSubtitle(v);
                   return (
                     <th
                       key={v.id}
@@ -404,11 +513,23 @@ function PLTableInner({
                     >
                       <div className="flex flex-col items-center gap-0.5">
                         <span>{serviceLine}</span>
-                        {courseCount === 0 ? (
-                          <span className="text-muted-foreground font-normal text-[10px]">コースなし</span>
+                        {courseSub.showTooltip && courseSub.tooltipLines ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="text-muted-foreground font-normal text-[10px] cursor-help">
+                                {courseSub.label}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="max-w-[280px]">
+                              <AllocationShareTooltipContent
+                                intro={ALLOCATION_SHARE_INTRO}
+                                lines={courseSub.tooltipLines}
+                              />
+                            </TooltipContent>
+                          </Tooltip>
                         ) : (
                           <span className="text-muted-foreground font-normal text-[10px]">
-                            {courseName}
+                            {courseSub.label}
                           </span>
                         )}
                       </div>
@@ -515,9 +636,12 @@ function PLTableInner({
                       const computed = courseGroupAmountsMap.get(g.id)!;
                       const value = getCourseCellValueFromComputed(g, item, computed);
                       const salesRatio = calcSalesRatio(value, computed.netRevenue);
+                      const isCourseReadOnly =
+                        readOnlyCourseItemIds.has(item.id) || useApiCourseRecords;
                       const isCourseEditable =
                         canEdit &&
                         !subtotal &&
+                        !isCourseReadOnly &&
                         onUpdateCourseRecord &&
                         g.vehicleIds.length > 0;
                       return (

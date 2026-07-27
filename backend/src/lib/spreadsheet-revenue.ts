@@ -33,6 +33,7 @@ import { REVENUE_CATEGORY } from "./calc.js";
 import { downloadDriveFileAsXlsxBuffer, listSharedPlSpreadsheetFileRefs } from "./google-drive-client.js";
 import { logSpreadsheetRevenue } from "./spreadsheet-revenue-log.js";
 import { getPreviousYearMonth } from "./salary-daily-proration.js";
+import { runCourseAllocationScope } from "./course-allocation-trigger.js";
 
 /** Current calendar month in Asia/Tokyo as YYYY-MM */
 export function yearMonthNowAsiaTokyo(d: Date = new Date()): string {
@@ -647,8 +648,9 @@ function parseIzumiVehicleProfitSheet(
     vehicleNo: string;
     course?: { name: string | null } | null;
   }>,
-  locationCode: string | null | undefined
-): Map<string, number> {
+  locationCode: string | null | undefined,
+  courseCodeToId: Map<string, string>
+): { vehicle: Map<string, number>; course: Map<string, number> } {
   let hdr = -1;
   for (let r = 0; r < Math.min(rows.length, 80); r++) {
     if (isIzumiVehicleProfitHeaderRow(rows[r])) {
@@ -660,13 +662,14 @@ function parseIzumiVehicleProfitSheet(
     console.warn(
       `[spreadsheet-revenue] sheet "${sheetLabel}" pivot: 「車両No」行が見つかりません`
     );
-    return new Map();
+    return { vehicle: new Map(), course: new Map() };
   }
 
   const vehicleRowIdx = hdr - 1;
   const headerRow = rows[hdr]!;
   const vehicleLabels = rows[vehicleRowIdx] ?? [];
-  const result = new Map<string, number>();
+  const vehicleResult = new Map<string, number>();
+  const courseResult = new Map<string, number>();
   const dupWarned = new Set<string>();
 
   for (
@@ -683,6 +686,34 @@ function parseIzumiVehicleProfitSheet(
 
     const amountCol = c;
     const vehicleKeyCell = vehicleLabels[amountCol];
+    const courseCodeKey = cellString(vehicleKeyCell).trim();
+    const courseId = courseCodeToId.get(courseCodeKey);
+
+    if (courseId) {
+      for (let r = hdr + 1; r < rows.length; r++) {
+        const row = rows[r];
+        if (!row) continue;
+        const label = cellString(row[0]);
+        if (!label) continue;
+        const accountItemId = accountNameToId.get(label);
+        if (!accountItemId || !revenueAllowed.has(accountItemId)) continue;
+
+        const key = `${courseId}-${accountItemId}`;
+        const amount = parseAmount(row[amountCol]);
+        if (amount === 0) continue;
+
+        if (courseResult.has(key) && !dupWarned.has(key)) {
+          dupWarned.add(key);
+          console.warn(
+            `[spreadsheet-revenue] duplicate pivot course entries for ${key}; last wins`
+          );
+        }
+        courseResult.set(key, amount);
+      }
+      c += 2;
+      continue;
+    }
+
     const vehicleId = resolveIzumiColumnVehicle(vehicleKeyCell, {
       vehicleAllowed,
       vehicleNoToId,
@@ -704,19 +735,19 @@ function parseIzumiVehicleProfitSheet(
       const amount = parseAmount(row[amountCol]);
       if (amount === 0) continue;
 
-      if (result.has(key) && !dupWarned.has(key)) {
+      if (vehicleResult.has(key) && !dupWarned.has(key)) {
         dupWarned.add(key);
         console.warn(
           `[spreadsheet-revenue] duplicate pivot entries for ${key}; last wins`
         );
       }
-      result.set(key, amount);
+      vehicleResult.set(key, amount);
     }
 
     c += 2;
   }
 
-  return result;
+  return { vehicle: vehicleResult, course: courseResult };
 }
 
 async function loadRevenueFromDbSnapshotIfSuccess(
@@ -764,7 +795,7 @@ type DriveRevenueParseContext = {
 async function downloadAndParseRevenueMapFromDrive(
   ctx: DriveRevenueParseContext
 ): Promise<
-  | { ok: true; map: Map<string, number>; sheetName: string }
+  | { ok: true; map: Map<string, number>; courseMap: Map<string, number>; sheetName: string }
   | { ok: false; error: string }
 > {
   const {
@@ -780,7 +811,7 @@ async function downloadAndParseRevenueMapFromDrive(
   const vehicleAllowed = new Set(vehicleIds);
   const revenueAllowed = new Set(revenueAccountItemIds);
 
-  const [vehicles, accountItems] = await Promise.all([
+  const [vehicles, accountItems, coursesAtLoc] = await Promise.all([
     prisma.vehicle.findMany({
       where: { id: { in: vehicleIds } },
       select: {
@@ -793,7 +824,16 @@ async function downloadAndParseRevenueMapFromDrive(
       where: { id: { in: revenueAccountItemIds } },
       select: { id: true, name: true },
     }),
+    prisma.course.findMany({
+      where: { locationId },
+      select: { id: true, code: true },
+    }),
   ]);
+
+  const courseCodeToId = new Map<string, string>();
+  for (const c of coursesAtLoc ?? []) {
+    courseCodeToId.set(String(c.code).trim(), c.id);
+  }
 
   const vehicleNoToId = new Map<string, string>();
   for (const v of vehicles) {
@@ -867,10 +907,11 @@ async function downloadAndParseRevenueMapFromDrive(
         yearMonth,
         sheetName,
       });
-      return { ok: true, map: new Map(), sheetName };
+      return { ok: true, map: new Map(), courseMap: new Map(), sheetName };
     }
 
     let result: Map<string, number>;
+    let courseMap = new Map<string, number>();
     if (sheetName.trim() === "売上明細") {
       result = parseUrimeisaiDetailSheet(
         rows,
@@ -894,7 +935,7 @@ async function downloadAndParseRevenueMapFromDrive(
     } else {
       const pivIdx = rows.findIndex(isIzumiVehicleProfitHeaderRow);
       if (pivIdx >= 1) {
-        result = parseIzumiVehicleProfitSheet(
+        const parsedPivot = parseIzumiVehicleProfitSheet(
           rows,
           sheetName,
           accountNameToId,
@@ -903,8 +944,11 @@ async function downloadAndParseRevenueMapFromDrive(
           vehicleNoToId,
           vehicleAllowed,
           vehicles,
-          location?.code ?? undefined
+          location?.code ?? undefined,
+          courseCodeToId
         );
+        result = parsedPivot.vehicle;
+        courseMap = parsedPivot.course;
       } else {
         console.warn(
           `[spreadsheet-revenue] sheet "${sheetName}" は 売上明細・vehicleNo 形式・Izumi 「車両No」ピボットのいずれでも読み取れませんでした。Location.spreadsheetRevenueSheet（例: 売上明細 / 車両別損益）と Drive のファイル構造を確認してください。`
@@ -923,8 +967,9 @@ async function downloadAndParseRevenueMapFromDrive(
       yearMonth,
       sheetName,
       revenueCellCount: result.size,
+      courseRevenueCellCount: courseMap.size,
     });
-    return { ok: true, map: result, sheetName };
+    return { ok: true, map: result, courseMap, sheetName };
   } catch (err) {
     console.error(
       `[spreadsheet-revenue] failed to read ${spreadsheetId} for ${yearMonth}:`,
@@ -1066,6 +1111,9 @@ export async function syncSpreadsheetRevenueForLocationYear(
       await tx.driveSpreadsheetRevenueLine.deleteMany({
         where: { locationId, yearMonth: ym },
       });
+      await tx.driveSpreadsheetRevenueCourseLine.deleteMany({
+        where: { locationId, yearMonth: ym },
+      });
       await tx.locationDriveSyncMeta.upsert({
         where: {
           locationId_yearMonth: { locationId, yearMonth: ym },
@@ -1153,12 +1201,44 @@ export async function syncSpreadsheetRevenueForLocationYear(
     });
   }
 
+  const courseLineRows: {
+    locationId: string;
+    yearMonth: string;
+    courseId: string;
+    accountItemId: string;
+    amount: number;
+  }[] = [];
+
+  for (const [key, amount] of parsed.courseMap) {
+    if (amount === 0) continue;
+    const dash = key.indexOf("-");
+    if (dash < 1) continue;
+    const courseId = key.slice(0, dash);
+    const accountItemId = key.slice(dash + 1);
+    if (!courseId || !accountItemId) continue;
+    courseLineRows.push({
+      locationId,
+      yearMonth: ym,
+      courseId,
+      accountItemId,
+      amount,
+    });
+  }
+
   await prisma.$transaction(async (tx) => {
     await tx.driveSpreadsheetRevenueLine.deleteMany({
       where: { locationId, yearMonth: ym },
     });
+    await tx.driveSpreadsheetRevenueCourseLine.deleteMany({
+      where: { locationId, yearMonth: ym },
+    });
     if (lineRows.length > 0) {
       await tx.driveSpreadsheetRevenueLine.createMany({ data: lineRows });
+    }
+    if (courseLineRows.length > 0) {
+      await tx.driveSpreadsheetRevenueCourseLine.createMany({
+        data: courseLineRows,
+      });
     }
     await tx.locationDriveSyncMeta.upsert({
       where: {
@@ -1172,7 +1252,7 @@ export async function syncSpreadsheetRevenueForLocationYear(
         status: "success",
         errorMessage: null,
         syncedAt,
-        recordCount: lineRows.length,
+        recordCount: lineRows.length + courseLineRows.length,
       },
       update: {
         driveFileId: spreadsheetId,
@@ -1180,16 +1260,18 @@ export async function syncSpreadsheetRevenueForLocationYear(
         status: "success",
         errorMessage: null,
         syncedAt,
-        recordCount: lineRows.length,
+        recordCount: lineRows.length + courseLineRows.length,
       },
     });
   });
+
+  await runCourseAllocationScope(ym, locationId);
 
   await prisma.dataSyncLog.create({
     data: {
       source: "Google Drive",
       syncType: SPREADSHEET_REVENUE_SYNC_TYPE,
-      recordCount: lineRows.length,
+      recordCount: lineRows.length + courseLineRows.length,
       yearMonth: ym,
       locationId,
     },

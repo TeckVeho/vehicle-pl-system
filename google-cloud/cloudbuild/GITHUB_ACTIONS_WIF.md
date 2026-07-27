@@ -267,11 +267,20 @@ The workload identity provider string (**`GCP_WORKLOAD_IDENTITY_PROVIDER`**) com
 
 ## Step 7 — Configure GitHub
 
-1. Create **Environments** `develop`, `staging`, and `production` (names must match branch names — see [workflow](../../.github/workflows/cd-gcp.yml)).
-2. In **each** environment, under **Secrets**, set:
+1. **Recommended (one command):** from repo root, after `gcloud auth login` and `gh auth login`:
+
+   ```bash
+   bash google-cloud/scripts/setup-github-actions-cicd.sh
+   ```
+
+   This creates WIF + IAM (if needed) and sets **repository** Secrets and Variables (same pattern as `TeckVeho/izumi-maintenance-v2`).
+
+2. **Manual alternative** — **Settings → Secrets and variables → Actions → Repository secrets** (not Environments; the workflow does not set `environment:`):
+
    - **`GCP_WORKLOAD_IDENTITY_PROVIDER`** — string from Step 3.
    - **`GCP_SERVICE_ACCOUNT`** — `SA_EMAIL` (from Step 4); must match IAM bindings in Steps 5–6.
-   - **`GCP_PROJECT_ID`** — `izumi-vpl` (or your single project ID). All three environments typically use the **same** project ID; URLs differ per env.
+   - **`GCP_PROJECT_ID`** — `izumi-vpl` (or your single project ID). All branches typically use the **same** project ID; URLs differ per env.
+
 3. Under **Variables** (not secrets), set:
    - **`GCP_NEXT_PUBLIC_API_URL`** / **`GCP_NEXT_PUBLIC_BASE_URL`** — required for **full** and **frontend** modes (public URLs for that environment’s API and web).
    - Optional: **`GCP_IMAGE_TAG`** — overrides default tag per branch (`dev` / `stage` / `prod` for `develop` / `staging` / `production`).

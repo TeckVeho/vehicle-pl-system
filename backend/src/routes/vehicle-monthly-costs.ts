@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { requireRole, ROLES } from "../lib/auth.js";
+import { runCourseAllocationScope } from "../lib/course-allocation-trigger.js";
 
 export const vehicleMonthlyCostsRouter = Router();
 
@@ -128,7 +129,9 @@ vehicleMonthlyCostsRouter.post(
         });
       }
 
-      res.json({ synced: results.length, yearMonth, results });
+      const courseAllocation = await runCourseAllocationScope(yearMonth, null);
+
+      res.json({ synced: results.length, yearMonth, results, courseAllocation });
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Failed to sync vehicle monthly costs" });

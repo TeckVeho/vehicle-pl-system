@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { requireRole, ROLES } from "../lib/auth.js";
 import { runLocationExpenseAllocation } from "../lib/location-expense-allocation.js";
+import { runCourseAllocationScope } from "../lib/course-allocation-trigger.js";
 import { LOCATION_EXPENSE_PRORATION_CODES } from "../lib/location-expense-proration.js";
 import { esc, generateCuid } from "../lib/sql-utils.js";
 
@@ -27,10 +28,12 @@ locationMonthlyExpensesRouter.post(
       }
 
       const allocationResult = await runLocationExpenseAllocation(yearMonth);
+      const courseAllocation = await runCourseAllocationScope(yearMonth, null);
 
       res.status(200).json({
         success: true,
         allocation: allocationResult,
+        courseAllocation,
       });
     } catch (err) {
       console.error(err);
@@ -168,8 +171,10 @@ locationMonthlyExpensesRouter.post(
       }
 
       let allocationResult = null;
+      let courseAllocation = null;
       if (!skipAllocation) {
         allocationResult = await runLocationExpenseAllocation(yearMonth);
+        courseAllocation = await runCourseAllocationScope(yearMonth, null);
       }
 
       await prisma.dataSyncLog.create({
@@ -185,6 +190,7 @@ locationMonthlyExpensesRouter.post(
         success: true,
         upserted,
         ...(allocationResult && { allocation: allocationResult }),
+        ...(courseAllocation && { courseAllocation }),
         ...(skipAllocation && { allocationSkipped: true }),
         ...(errors.length > 0 && { errors }),
       });
