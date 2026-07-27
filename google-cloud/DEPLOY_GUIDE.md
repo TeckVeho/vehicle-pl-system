@@ -133,11 +133,21 @@ Change default admin password after seed (`admin@example.com` / `password`).
 
 ## 7. GitHub Actions CI/CD
 
-1. Run WIF setup: [cloudbuild/GITHUB_ACTIONS_WIF.md](cloudbuild/GITHUB_ACTIONS_WIF.md)
-2. Set repository **Secrets**: `GCP_PROJECT_ID`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`
-3. Set repository **Variables**:
+1. **One-shot setup** (after `gcloud auth login` and `gh auth login`):
+
+   ```bash
+   bash google-cloud/scripts/setup-github-actions-cicd.sh
+   ```
+
+2. Or manual WIF: [cloudbuild/GITHUB_ACTIONS_WIF.md](cloudbuild/GITHUB_ACTIONS_WIF.md)
+
+**Repository secrets:** `GCP_PROJECT_ID`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`
+
+**Repository variables:**
+
    - `GCP_NEXT_PUBLIC_API_URL_DEVELOP`
    - `GCP_NEXT_PUBLIC_BASE_URL_DEVELOP`
+   - (and `_STAGING` / `_PRODUCTION` when those branches deploy)
 
 Push to `develop` triggers deploy via `.github/workflows/cd-gcp.yml`.
 
