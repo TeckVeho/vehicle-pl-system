@@ -17,7 +17,7 @@ import { useYearMonthStore } from "@/stores/yearMonthStore";
 
 /** Bump when cache shape/API contract changes so stale empty payloads are dropped */
 const CACHE_KEY_PREFIX = "income-statement:v6";
-const METADATA_CACHE_KEY_PREFIX = "income-statement:metadata:v2";
+const METADATA_CACHE_KEY_PREFIX = "income-statement:metadata:v3";
 
 interface PlCourseColumn {
   slotKey: string;

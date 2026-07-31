@@ -36,7 +36,7 @@ export default function ImportPage() {
   const [result, setResult] = useState<{ success: number; errors: string[] } | null>(null);
 
   const fetchLocations = async () => {
-    const res = await fetchApi("/api/locations");
+    const res = await fetchApi("/api/locations?visibleOnly=true");
     const data = await res.json();
     setLocations(data);
     if (data.length > 0 && !locationId) {

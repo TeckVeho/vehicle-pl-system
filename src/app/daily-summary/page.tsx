@@ -76,7 +76,7 @@ function DailySummaryContent() {
   const [loading, setLoading] = useState(true);
 
   const fetchLocations = async () => {
-    const res = await fetchApi("/api/locations");
+    const res = await fetchApi("/api/locations?visibleOnly=true");
     const data = await res.json();
     setLocations(data);
   };
