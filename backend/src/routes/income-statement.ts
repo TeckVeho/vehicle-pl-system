@@ -12,6 +12,7 @@ import { getPreviousYearMonth } from "../lib/salary-daily-proration.js";
 import { isLocationExpenseProrationAccount } from "../lib/location-expense-proration.js";
 import { NO_COURSE_SLOT_KEY, isCourseReadOnlyAccount } from "../lib/course-allocation.js";
 import { buildAtmtcCourseVehicleLinks } from "../lib/atmtc-course-vehicle-links.js";
+import { filterVisibleLocations } from "../lib/visible-locations.js";
 
 /** 手入力専用（CSV/API一括登録不可）の勘定科目名 */
 const MANUAL_INPUT_ONLY_NAMES = ["その他", "不動産収入", "人材派遣収入"];
@@ -39,13 +40,14 @@ incomeStatementRouter.get("/metadata", async (req: Request, res: Response) => {
     return;
   }
 
-  const [accountItems, locations] = await Promise.all([
+  const [accountItems, allLocations] = await Promise.all([
     prisma.accountItem.findMany({
       where: accountItemEffectiveWhere(yearMonth),
       orderBy: { sortOrder: "asc" },
     }),
     prisma.location.findMany({ orderBy: { code: "asc" } }),
   ]);
+  const locations = filterVisibleLocations(allLocations);
 
   metadataCache = {
     data: { accountItems, locations },
