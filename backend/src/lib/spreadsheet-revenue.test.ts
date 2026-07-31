@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { downloadMock, readXlsxMock, readSheetNamesMock, listPlFilesMock, prismaMock } = vi.hoisted(
+const { downloadMock, readXlsxMock, readSheetNamesMock, listPlFilesMock, getDriveFileMetaMock, prismaMock } = vi.hoisted(
   () => ({
     downloadMock: vi.fn(),
     readXlsxMock: vi.fn(),
     readSheetNamesMock: vi.fn(),
     listPlFilesMock: vi.fn(),
+    getDriveFileMetaMock: vi.fn(),
     prismaMock: {
       location: { findUnique: vi.fn() },
       vehicle: { findMany: vi.fn() },
@@ -20,6 +21,7 @@ const { downloadMock, readXlsxMock, readSheetNamesMock, listPlFilesMock, prismaM
 vi.mock("./google-drive-client.js", () => ({
   downloadDriveFileAsXlsxBuffer: downloadMock,
   listSharedPlSpreadsheetFileRefs: listPlFilesMock,
+  getDriveFileMeta: getDriveFileMetaMock,
 }));
 
 vi.mock("read-excel-file/node", () => ({
@@ -31,7 +33,41 @@ vi.mock("./prisma.js", () => ({
   prisma: prismaMock,
 }));
 
-import { getRevenueFromSpreadsheets } from "./spreadsheet-revenue.js";
+import {
+  clearDrivePlFileCacheForTests,
+  getRevenueFromSpreadsheets,
+  parseYearMonthFromPlFileName,
+  pickRevenueWorkbookSheetName,
+} from "./spreadsheet-revenue.js";
+
+describe("parseYearMonthFromPlFileName", () => {
+  it("parses dot, dash, and compact patterns", () => {
+    expect(parseYearMonthFromPlFileName("18(浜松)損益計算資料2026.02.xlsx")).toBe(
+      "2026-02"
+    );
+    expect(parseYearMonthFromPlFileName("13(名古屋)損益計算資料2026-03.xlsx")).toBe(
+      "2026-03"
+    );
+    expect(parseYearMonthFromPlFileName("損益計算資料202603.xlsx")).toBe("2026-03");
+    expect(parseYearMonthFromPlFileName("損益計算資料2026.2.xlsx")).toBe("2026-02");
+  });
+
+  it("returns null when no year-month in filename", () => {
+    expect(parseYearMonthFromPlFileName("損益計算資料.xlsx")).toBeNull();
+  });
+});
+
+describe("pickRevenueWorkbookSheetName", () => {
+  it("tries yearMonth tab before 売上明細 when no configured sheet", () => {
+    expect(
+      pickRevenueWorkbookSheetName(
+        ["車両別損益", "売上明細", "2026-03"],
+        "2026-03",
+        undefined
+      )
+    ).toBe("2026-03");
+  });
+});
 
 describe("getRevenueFromSpreadsheets", () => {
   const baseParams = {
@@ -42,8 +78,13 @@ describe("getRevenueFromSpreadsheets", () => {
   };
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
+    clearDrivePlFileCacheForTests();
     listPlFilesMock.mockResolvedValue([]);
+    getDriveFileMetaMock.mockImplementation(async (fileId: string) => ({
+      id: fileId,
+      name: "損益計算資料2026.03.xlsx",
+    }));
     prismaMock.locationDriveSyncMeta.findUnique.mockResolvedValue(null);
     prismaMock.driveSpreadsheetRevenueLine.findMany.mockResolvedValue([]);
     prismaMock.course.findMany.mockResolvedValue([]);
@@ -67,10 +108,67 @@ describe("getRevenueFromSpreadsheets", () => {
     expect(map.size).toBe(0);
     expect(listPlFilesMock).toHaveBeenCalled();
     expect(warn).toHaveBeenCalled();
-    expect(String(warn.mock.calls[0]?.[0] ?? "")).toContain("no spreadsheetId and no shared");
+    expect(String(warn.mock.calls[0]?.[0] ?? "")).toContain(
+      "no auto-matched"
+    );
     expect(downloadMock).not.toHaveBeenCalled();
 
     warn.mockRestore();
+  });
+
+  it("returns empty Map when fallback spreadsheetId file month mismatches requested yearMonth", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    prismaMock.location.findUnique.mockResolvedValue({
+      spreadsheetId: "fixed-file",
+      spreadsheetRevenueSheet: null,
+      code: null,
+      name: "浜松",
+    });
+    getDriveFileMetaMock.mockResolvedValue({
+      id: "fixed-file",
+      name: "18(浜松)損益計算資料2026.02.xlsx",
+    });
+
+    const map = await getRevenueFromSpreadsheets({
+      ...baseParams,
+      yearMonth: "2026-07",
+    });
+
+    expect(map.size).toBe(0);
+    expect(downloadMock).not.toHaveBeenCalled();
+    expect(String(warn.mock.calls[0]?.[0] ?? "")).toContain("does not match");
+
+    warn.mockRestore();
+  });
+
+  it("prefers folder auto-resolve over fixed spreadsheetId when both exist", async () => {
+    prismaMock.location.findUnique.mockResolvedValue({
+      spreadsheetId: "fixed-old",
+      spreadsheetRevenueSheet: null,
+      code: "LOC017",
+      name: "浜松",
+    });
+    listPlFilesMock.mockResolvedValue([
+      { id: "folder-file", name: "18(浜松)損益計算資料2026.03.xlsx" },
+    ]);
+    prismaMock.vehicle.findMany.mockResolvedValue([
+      { id: "v1", vehicleNo: "017-001", course: null },
+    ]);
+    prismaMock.accountItem.findMany.mockResolvedValue([
+      { id: "a1", name: "山崎製パン" },
+    ]);
+    downloadMock.mockResolvedValue(Buffer.from([1]));
+    readSheetNamesMock.mockResolvedValueOnce(["2026-03"]);
+    readXlsxMock.mockResolvedValueOnce([
+      ["vehicleNo", "山崎製パン"],
+      ["017-001", 999],
+    ]);
+
+    const map = await getRevenueFromSpreadsheets(baseParams);
+
+    expect(downloadMock).toHaveBeenCalledWith("folder-file");
+    expect(getDriveFileMetaMock).not.toHaveBeenCalled();
+    expect(map.get("v1-a1")).toBe(999);
   });
 
   it("returns empty Map and logs error when Drive fails; never throws", async () => {
@@ -79,7 +177,11 @@ describe("getRevenueFromSpreadsheets", () => {
       spreadsheetId: "file-xyz",
       spreadsheetRevenueSheet: null,
       code: null,
-      name: null,
+      name: "Test",
+    });
+    getDriveFileMetaMock.mockResolvedValue({
+      id: "file-xyz",
+      name: "損益計算資料2026.03.xlsx",
     });
     prismaMock.vehicle.findMany.mockResolvedValue([
       { id: "v1", vehicleNo: "001-001", course: null },
@@ -106,6 +208,11 @@ describe("getRevenueFromSpreadsheets", () => {
       spreadsheetId: "file-tab",
       spreadsheetRevenueSheet: null,
       code: null,
+      name: "Test",
+    });
+    getDriveFileMetaMock.mockResolvedValue({
+      id: "file-tab",
+      name: "損益計算資料2026.03.xlsx",
     });
     prismaMock.vehicle.findMany.mockResolvedValue([
       { id: "v1", vehicleNo: "001-001", course: null },
@@ -131,6 +238,11 @@ describe("getRevenueFromSpreadsheets", () => {
       spreadsheetId: "file-ok",
       spreadsheetRevenueSheet: "2026-03",
       code: null,
+      name: "Test",
+    });
+    getDriveFileMetaMock.mockResolvedValue({
+      id: "file-ok",
+      name: "損益計算資料2026.03.xlsx",
     });
     prismaMock.vehicle.findMany.mockResolvedValue([
       { id: "v1", vehicleNo: "001-001", course: null },
@@ -220,6 +332,11 @@ describe("getRevenueFromSpreadsheets", () => {
       spreadsheetId: "file-dot",
       spreadsheetRevenueSheet: "2026.02",
       code: null,
+      name: "Test",
+    });
+    getDriveFileMetaMock.mockResolvedValue({
+      id: "file-dot",
+      name: "損益計算資料2026.02.xlsx",
     });
     prismaMock.vehicle.findMany.mockResolvedValue([
       { id: "v1", vehicleNo: "18-16", course: null },
@@ -249,6 +366,11 @@ describe("getRevenueFromSpreadsheets", () => {
       spreadsheetId: "file-piv",
       spreadsheetRevenueSheet: "車両別損益",
       code: "LOC001",
+      name: "Test",
+    });
+    getDriveFileMetaMock.mockResolvedValue({
+      id: "file-piv",
+      name: "損益計算資料2026.02.xlsx",
     });
     prismaMock.vehicle.findMany.mockResolvedValue([
       { id: "vx", vehicleNo: "18-16", course: { name: "c1" } },
@@ -280,6 +402,11 @@ describe("getRevenueFromSpreadsheets", () => {
       spreadsheetId: "f-loc",
       spreadsheetRevenueSheet: "車両別損益",
       code: "LOC015",
+      name: "名古屋",
+    });
+    getDriveFileMetaMock.mockResolvedValue({
+      id: "f-loc",
+      name: "損益計算資料2026.02.xlsx",
     });
     prismaMock.vehicle.findMany.mockResolvedValue([
       { id: "v034", vehicleNo: "015-034", course: { name: "test" } },
@@ -311,6 +438,11 @@ describe("getRevenueFromSpreadsheets", () => {
       spreadsheetId: "f-alias",
       spreadsheetRevenueSheet: "車両別損益",
       code: "LOC015",
+      name: "名古屋",
+    });
+    getDriveFileMetaMock.mockResolvedValue({
+      id: "f-alias",
+      name: "損益計算資料2026.02.xlsx",
     });
     prismaMock.vehicle.findMany.mockResolvedValue([
       { id: "v10", vehicleNo: "015-010", course: null },
@@ -342,6 +474,11 @@ describe("getRevenueFromSpreadsheets", () => {
       spreadsheetId: "file-urimei",
       spreadsheetRevenueSheet: "売上明細",
       code: "LOC015",
+      name: "名古屋",
+    });
+    getDriveFileMetaMock.mockResolvedValue({
+      id: "file-urimei",
+      name: "損益計算資料2026.02.xlsx",
     });
     prismaMock.vehicle.findMany.mockResolvedValue([
       { id: "v16", vehicleNo: "015-016", course: null },
@@ -448,6 +585,11 @@ describe("getRevenueFromSpreadsheets", () => {
       spreadsheetId: "file-both-tabs",
       spreadsheetRevenueSheet: null,
       code: "LOC015",
+      name: "名古屋",
+    });
+    getDriveFileMetaMock.mockResolvedValue({
+      id: "file-both-tabs",
+      name: "損益計算資料2026.02.xlsx",
     });
     prismaMock.vehicle.findMany.mockResolvedValue([
       { id: "v16", vehicleNo: "015-016", course: null },
