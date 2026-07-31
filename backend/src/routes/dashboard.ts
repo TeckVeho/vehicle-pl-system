@@ -17,6 +17,7 @@ import { getPreviousYearMonth } from "../lib/salary-daily-proration.js";
 import { isLocationExpenseProrationAccount } from "../lib/location-expense-proration.js";
 import { requireRole, ROLES } from "../lib/auth.js";
 import { runSpreadsheetRevenueSync } from "../lib/scheduler.js";
+import { filterVisibleLocations } from "../lib/visible-locations.js";
 
 /** 手入力専用（スプレッドシート対象外・MonthlyRecord から取得） */
 const MANUAL_INPUT_ONLY_NAMES = ["その他", "不動産収入", "人材派遣収入"];
@@ -40,7 +41,7 @@ dashboardRouter.get("/summary", async (req: Request, res: Response) => {
 
   const prevYearMonth = getPreviousYearMonth(yearMonth);
 
-  const [locations, vehicles, accountItems, records, prevMonthRecords, vehicleCosts, prevMonthVehicleCosts, locationExpenses, locationParams, driveRevenueLines, syncMetas] =
+  const [allLocations, vehicles, accountItems, records, prevMonthRecords, vehicleCosts, prevMonthVehicleCosts, locationExpenses, locationParams, driveRevenueLines, syncMetas] =
     await Promise.all([
       prisma.location.findMany({ orderBy: { code: "asc" } }),
       prisma.vehicle.findMany({
@@ -89,6 +90,8 @@ dashboardRouter.get("/summary", async (req: Request, res: Response) => {
         where: { yearMonth },
       }),
     ]);
+
+  const locations = filterVisibleLocations(allLocations);
 
   const revenueItemIds = new Set(
     accountItems.filter((a) => a.category === REVENUE_CATEGORY).map((a) => a.id)
@@ -273,7 +276,7 @@ dashboardRouter.get("/summary", async (req: Request, res: Response) => {
       totalNetRevenue,
       totalExpense,
       totalGrossProfit,
-      totalVehicleCount: vehicles.length,
+      totalVehicleCount: locationSummaries.reduce((s, l) => s + l.vehicleCount, 0),
       locationCount: locations.length,
     },
     locationSummaries,

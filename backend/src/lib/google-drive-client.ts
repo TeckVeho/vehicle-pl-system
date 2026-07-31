@@ -192,6 +192,31 @@ export async function listSpreadsheetsInFolder(
   return refs;
 }
 
+/**
+ * Fetch Drive file id + name (metadata only, no download).
+ * Used when falling back to `Location.spreadsheetId` so sync can parse yearMonth from the filename.
+ */
+export async function getDriveFileMeta(fileId: string): Promise<DriveFileRef> {
+  if (!fileId?.trim()) {
+    throw new Error("[google-drive] getDriveFileMeta: empty fileId");
+  }
+
+  const drive = getDriveClient();
+  const res = await drive.files.get({
+    fileId: fileId.trim(),
+    fields: "id, name",
+    supportsAllDrives: true,
+  });
+
+  const id = res.data.id;
+  const name = res.data.name;
+  if (!id || !name) {
+    throw new Error(`[google-drive] getDriveFileMeta: missing id/name for ${fileId}`);
+  }
+
+  return { id, name };
+}
+
 /** Test-only: clear the singleton between cases. */
 export function resetGoogleDriveClientForTests(): void {
   driveClient = null;
