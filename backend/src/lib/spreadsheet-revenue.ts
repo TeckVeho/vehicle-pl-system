@@ -17,20 +17,24 @@
  * Data: column `A` = vehicle key (`18-16` style → resolved with `Location.code`).  
  * Amount per revenue account: cell under each block’s `月額` column.  
  * **`#ERROR!` / `#DIV/0!` cells** are read as **0** until fixed in the workbook (`parseAmount`).  
- * **Tab choice:** When `spreadsheetRevenueSheet` is unset: **`売上明細`**, else **`車両別損益`**. Set `spreadsheetRevenueSheet` to a tab name to override (e.g. canonical **`YYYY-MM`** / **`YYYY.MM`** sheet).
+ * **Tab choice:** When `spreadsheetRevenueSheet` is unset: try **`YYYY-MM`** / **`YYYY.MM`** tab variants for the requested month, then **`売上明細`**, else **`車両別損益`**. Set `spreadsheetRevenueSheet` to override.
  *
- * Sheet picking (`spreadsheetRevenueSheet`): explicit tab name when set; otherwise PM order above. Caller-supplied `yearMonth` stays canonical internally (`YYYY-MM`).
+ * Sheet picking (`spreadsheetRevenueSheet`): explicit tab name when set; otherwise yearMonth tab → 売上明細 → 車両別損益. Caller-supplied `yearMonth` stays canonical internally (`YYYY-MM`).
  *
  * Never throws on failures → warns/logs → empty Map → callers render zeros.
  *
- * **Drive file:** Names contain `損益計算資料`. Folder ID (`GOOGLE_DRIVE_FOLDER_ID` or `google_drive_folder_id`) is required for auto-discovery (direct children); no folder → no Drive list fallback. If `Location.spreadsheetId` is empty, match by marker + **`Location.name`** + **`yearMonth`**, cache ~5 min. Default sheet: **`売上明細`** then **`車両別損益`** when both exist (`spreadsheetRevenueSheet` required to read a **`YYYY-MM`** / **`YYYY.MM`**-named tab automatically).
+ * **Drive file:** Names contain `損益計算資料`. Folder ID (`GOOGLE_DRIVE_FOLDER_ID` or `google_drive_folder_id`) is required for auto-discovery (direct children); no folder → no Drive list fallback. Sync always tries folder auto-resolve (marker + **`Location.name`** + **`yearMonth`**) first; `Location.spreadsheetId` is fallback only. DB `yearMonth` is parsed from the Drive **filename**, not the sync request, and must match the requested month.
  */
 
 import readXlsxFile, { readSheetNames } from "read-excel-file/node";
 import { prisma } from "./prisma.js";
 import { accountItemEffectiveWhere } from "./account-item-filter.js";
 import { REVENUE_CATEGORY } from "./calc.js";
-import { downloadDriveFileAsXlsxBuffer, listSharedPlSpreadsheetFileRefs } from "./google-drive-client.js";
+import {
+  downloadDriveFileAsXlsxBuffer,
+  getDriveFileMeta,
+  listSharedPlSpreadsheetFileRefs,
+} from "./google-drive-client.js";
 import { logSpreadsheetRevenue } from "./spreadsheet-revenue-log.js";
 import { getPreviousYearMonth } from "./salary-daily-proration.js";
 import { runCourseAllocationScope } from "./course-allocation-trigger.js";
@@ -98,6 +102,47 @@ const IZUMI_REVENUE_ROW_LABEL_TO_ACCOUNT_ITEM_NAME: Record<string, string> = {
   ダイセーログ: "ダイセーロジスティクス",
 };
 
+/** Alternate 拠点名 spellings that appear in Drive workbook filenames. */
+const LOCATION_NAME_FILE_ALIASES: Record<string, string[]> = {
+  横浜第1: ["横浜第一", "横浜第１"],
+};
+
+/**
+ * Parse canonical YYYY-MM from a 損益計算資料 Drive filename.
+ * Supports `2026.02`, `2026-02`, `202602`, and `2026.2` (unpadded month).
+ */
+export function parseYearMonthFromPlFileName(fileName: string): string | null {
+  const dotMatch = /(\d{4})\.(\d{1,2})(?!\d)/.exec(fileName);
+  if (dotMatch) {
+    const mo = dotMatch[2].padStart(2, "0");
+    const m = parseInt(mo, 10);
+    if (m >= 1 && m <= 12) return `${dotMatch[1]}-${mo}`;
+  }
+
+  const dashMatch = /(\d{4})-(\d{1,2})(?!\d)/.exec(fileName);
+  if (dashMatch) {
+    const mo = dashMatch[2].padStart(2, "0");
+    const m = parseInt(mo, 10);
+    if (m >= 1 && m <= 12) return `${dashMatch[1]}-${mo}`;
+  }
+
+  const compactMatch = /(\d{4})(\d{2})(?!\d)/.exec(fileName);
+  if (compactMatch) {
+    const mo = compactMatch[2];
+    const m = parseInt(mo, 10);
+    if (m >= 1 && m <= 12) return `${compactMatch[1]}-${mo}`;
+  }
+
+  return null;
+}
+
+function locationNameVariants(locationName: string): string[] {
+  const loc = locationName.trim();
+  if (!loc) return [];
+  const aliases = LOCATION_NAME_FILE_ALIASES[loc] ?? [];
+  return [loc, ...aliases];
+}
+
 function yearMonthFilenameFragments(yearMonth: string): string[] {
   const ym = yearMonth.trim();
   const out = new Set<string>();
@@ -120,9 +165,9 @@ function fileMatchesLocationPlTemplate(
   locationName: string,
   yearMonth: string
 ): boolean {
-  const loc = locationName.trim();
-  if (!loc) return false;
-  if (!fileName.includes(loc)) return false;
+  const variants = locationNameVariants(locationName);
+  if (variants.length === 0) return false;
+  if (!variants.some((v) => fileName.includes(v))) return false;
   const frags = yearMonthFilenameFragments(yearMonth);
   return frags.some((f) => fileName.includes(f));
 }
@@ -132,6 +177,11 @@ const drivePlFileCache = new Map<
   { id: string; name: string; expiry: number }
 >();
 const DRIVE_PL_FILE_CACHE_MS = 5 * 60 * 1000;
+
+/** Test-only: clear auto-resolve cache between cases. */
+export function clearDrivePlFileCacheForTests(): void {
+  drivePlFileCache.clear();
+}
 
 async function resolvePlSpreadsheetFileFromSharedDrive(
   locationId: string,
@@ -179,16 +229,97 @@ async function resolvePlSpreadsheetFileFromSharedDrive(
   return chosen;
 }
 
-function pickRevenueWorkbookSheetName(
+type ResolveSpreadsheetDriveFileResult =
+  | {
+      ok: true;
+      spreadsheetId: string;
+      driveFileName: string;
+      canonicalYm: string;
+      autoResolvedDriveFile: boolean;
+    }
+  | { ok: false; error: string; driveFileId?: string };
+
+/**
+ * Resolve Drive workbook for a location/month: folder auto-resolve first, then spreadsheetId fallback.
+ * Validates that the filename month matches the requested yearMonth.
+ */
+async function resolveSpreadsheetDriveFileForYearMonth(
+  locationId: string,
+  location: { spreadsheetId: string | null; name: string | null },
+  requestedYm: string
+): Promise<ResolveSpreadsheetDriveFileResult> {
+  const resolved = await resolvePlSpreadsheetFileFromSharedDrive(
+    locationId,
+    location.name ?? "",
+    requestedYm
+  );
+
+  let spreadsheetId = resolved?.id ?? "";
+  let driveFileName = resolved?.name ?? "";
+  let autoResolvedDriveFile = Boolean(resolved);
+
+  if (!spreadsheetId && location.spreadsheetId?.trim()) {
+    spreadsheetId = location.spreadsheetId.trim();
+    try {
+      const meta = await getDriveFileMeta(spreadsheetId);
+      driveFileName = meta.name;
+      autoResolvedDriveFile = false;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        ok: false,
+        error: `failed to fetch Drive file metadata: ${msg}`,
+        driveFileId: spreadsheetId,
+      };
+    }
+  }
+
+  if (!spreadsheetId) {
+    return {
+      ok: false,
+      error: `no spreadsheetId and no auto-matched 損益計算資料 for 拠点「${location.name ?? ""}」 ${requestedYm}`,
+    };
+  }
+
+  const canonicalYm = parseYearMonthFromPlFileName(driveFileName);
+  if (!canonicalYm) {
+    return {
+      ok: false,
+      error: `cannot determine yearMonth from Drive file name: ${driveFileName}`,
+      driveFileId: spreadsheetId,
+    };
+  }
+
+  if (canonicalYm !== requestedYm) {
+    return {
+      ok: false,
+      error: `Drive file month ${canonicalYm} does not match requested ${requestedYm} (file: ${driveFileName})`,
+      driveFileId: spreadsheetId,
+    };
+  }
+
+  return {
+    ok: true,
+    spreadsheetId,
+    driveFileName,
+    canonicalYm,
+    autoResolvedDriveFile,
+  };
+}
+
+export function pickRevenueWorkbookSheetName(
   sheetNames: string[],
-  _yearMonth: string,
+  yearMonth: string,
   configuredSheet: string | undefined
 ): string {
   const cfg = configuredSheet?.trim();
   if (cfg) {
     return pickSheetNameExact(sheetNames, cfg) ?? "";
   }
-  /** PM: 損益計算資料ブックの既定読み取りシートは「売上明細」。無い場合のみ「車両別損益」。 */
+  for (const frag of yearMonthFilenameFragments(yearMonth)) {
+    const ymTab = pickSheetNameExact(sheetNames, frag);
+    if (ymTab) return ymTab;
+  }
   const urimei = pickSheetNameExact(sheetNames, "売上明細");
   if (urimei) return urimei;
   return pickSheetNameExact(sheetNames, "車両別損益") ?? "";
@@ -872,7 +1003,9 @@ async function downloadAndParseRevenueMapFromDrive(
 
     if (!sheetName) {
       const cfg = location?.spreadsheetRevenueSheet?.trim();
-      const triedDesc = cfg ? `configured="${cfg}"` : "売上明細, 車両別損益";
+      const triedDesc = cfg
+        ? `configured="${cfg}"`
+        : `${yearMonthFilenameFragments(yearMonth).join(", ")}, 売上明細, 車両別損益`;
       console.warn(
         `[spreadsheet-revenue] no sheet resolved for "${yearMonth}" (tried: ${triedDesc}) in ${spreadsheetId}. Tabs: ${sheetNames.slice(0, 15).join(", ")}…`
       );
@@ -880,7 +1013,9 @@ async function downloadAndParseRevenueMapFromDrive(
         locationId,
         yearMonth,
         spreadsheetId,
-        tabCandidates: cfg ? cfg : "売上明細|車両別損益",
+        tabCandidates: cfg
+          ? cfg
+          : `${yearMonthFilenameFragments(yearMonth).join("|")}|売上明細|車両別損益`,
         configuredSheet: cfg || null,
         autoResolvedDriveFile,
         tabSample: sheetNames.slice(0, 20).join("|"),
@@ -1051,30 +1186,41 @@ export async function syncSpreadsheetRevenueForLocationYear(
     return { ok: false, error: "Location not found" };
   }
 
-  let spreadsheetId = location.spreadsheetId?.trim() ?? "";
-  let autoResolvedDriveFile = false;
-  if (!spreadsheetId) {
-    const resolved = await resolvePlSpreadsheetFileFromSharedDrive(
+  const fileResolved = await resolveSpreadsheetDriveFileForYearMonth(
+    locationId,
+    location,
+    ym
+  );
+
+  if (!fileResolved.ok) {
+    await persistSyncFailureMeta(
       locationId,
-      location.name ?? "",
-      ym
+      ym,
+      fileResolved.driveFileId ?? null,
+      null,
+      fileResolved.error
     );
-    if (resolved) {
-      spreadsheetId = resolved.id;
-      autoResolvedDriveFile = true;
-      void logSpreadsheetRevenue("info", "sync: auto-resolved Drive file", {
-        locationId,
-        yearMonth: ym,
-        spreadsheetId,
-        fileName: resolved.name,
-      });
-    }
+    return {
+      ok: false,
+      error: fileResolved.error,
+      driveFileId: fileResolved.driveFileId,
+    };
   }
 
-  if (!spreadsheetId) {
-    const msg = `no spreadsheetId and no auto-matched 損益計算資料 for 拠点「${location.name ?? ""}」 ${ym}`;
-    await persistSyncFailureMeta(locationId, ym, null, null, msg);
-    return { ok: false, error: msg };
+  const {
+    spreadsheetId,
+    driveFileName,
+    canonicalYm,
+    autoResolvedDriveFile,
+  } = fileResolved;
+
+  if (autoResolvedDriveFile) {
+    void logSpreadsheetRevenue("info", "sync: auto-resolved Drive file", {
+      locationId,
+      yearMonth: canonicalYm,
+      spreadsheetId,
+      fileName: driveFileName,
+    });
   }
 
   const [vehicles, revenueAccountItems] = await Promise.all([
@@ -1109,18 +1255,18 @@ export async function syncSpreadsheetRevenueForLocationYear(
     const syncedAt = new Date();
     await prisma.$transaction(async (tx) => {
       await tx.driveSpreadsheetRevenueLine.deleteMany({
-        where: { locationId, yearMonth: ym },
+        where: { locationId, yearMonth: canonicalYm },
       });
       await tx.driveSpreadsheetRevenueCourseLine.deleteMany({
-        where: { locationId, yearMonth: ym },
+        where: { locationId, yearMonth: canonicalYm },
       });
       await tx.locationDriveSyncMeta.upsert({
         where: {
-          locationId_yearMonth: { locationId, yearMonth: ym },
+          locationId_yearMonth: { locationId, yearMonth: canonicalYm },
         },
         create: {
           locationId,
-          yearMonth: ym,
+          yearMonth: canonicalYm,
           driveFileId: spreadsheetId,
           revenueSheetTab: null,
           status: "success",
@@ -1143,7 +1289,7 @@ export async function syncSpreadsheetRevenueForLocationYear(
         source: "Google Drive",
         syncType: SPREADSHEET_REVENUE_SYNC_TYPE,
         recordCount: 0,
-        yearMonth: ym,
+        yearMonth: canonicalYm,
         locationId,
       },
     });
@@ -1157,7 +1303,7 @@ export async function syncSpreadsheetRevenueForLocationYear(
 
   const parsed = await downloadAndParseRevenueMapFromDrive({
     locationId,
-    yearMonth: ym,
+    yearMonth: canonicalYm,
     spreadsheetId,
     autoResolvedDriveFile,
     location: locSlice,
@@ -1168,7 +1314,7 @@ export async function syncSpreadsheetRevenueForLocationYear(
   if (!parsed.ok) {
     await persistSyncFailureMeta(
       locationId,
-      ym,
+      canonicalYm,
       spreadsheetId,
       null,
       parsed.error
@@ -1194,7 +1340,7 @@ export async function syncSpreadsheetRevenueForLocationYear(
     if (!vehicleId || !accountItemId) continue;
     lineRows.push({
       locationId,
-      yearMonth: ym,
+      yearMonth: canonicalYm,
       vehicleId,
       accountItemId,
       amount,
@@ -1218,7 +1364,7 @@ export async function syncSpreadsheetRevenueForLocationYear(
     if (!courseId || !accountItemId) continue;
     courseLineRows.push({
       locationId,
-      yearMonth: ym,
+      yearMonth: canonicalYm,
       courseId,
       accountItemId,
       amount,
@@ -1227,10 +1373,10 @@ export async function syncSpreadsheetRevenueForLocationYear(
 
   await prisma.$transaction(async (tx) => {
     await tx.driveSpreadsheetRevenueLine.deleteMany({
-      where: { locationId, yearMonth: ym },
+      where: { locationId, yearMonth: canonicalYm },
     });
     await tx.driveSpreadsheetRevenueCourseLine.deleteMany({
-      where: { locationId, yearMonth: ym },
+      where: { locationId, yearMonth: canonicalYm },
     });
     if (lineRows.length > 0) {
       await tx.driveSpreadsheetRevenueLine.createMany({ data: lineRows });
@@ -1242,11 +1388,11 @@ export async function syncSpreadsheetRevenueForLocationYear(
     }
     await tx.locationDriveSyncMeta.upsert({
       where: {
-        locationId_yearMonth: { locationId, yearMonth: ym },
+        locationId_yearMonth: { locationId, yearMonth: canonicalYm },
       },
       create: {
         locationId,
-        yearMonth: ym,
+        yearMonth: canonicalYm,
         driveFileId: spreadsheetId,
         revenueSheetTab: parsed.sheetName,
         status: "success",
@@ -1265,14 +1411,14 @@ export async function syncSpreadsheetRevenueForLocationYear(
     });
   });
 
-  await runCourseAllocationScope(ym, locationId);
+  await runCourseAllocationScope(canonicalYm, locationId);
 
   await prisma.dataSyncLog.create({
     data: {
       source: "Google Drive",
       syncType: SPREADSHEET_REVENUE_SYNC_TYPE,
       recordCount: lineRows.length + courseLineRows.length,
-      yearMonth: ym,
+      yearMonth: canonicalYm,
       locationId,
     },
   });
@@ -1339,51 +1485,56 @@ export async function getRevenueFromSpreadsheets(
     },
   });
 
-  let spreadsheetId = location?.spreadsheetId?.trim() ?? "";
-  let autoResolvedDriveFile = false;
-  if (!spreadsheetId) {
-    const resolved = await resolvePlSpreadsheetFileFromSharedDrive(
-      locationId,
-      location?.name ?? "",
-      yearMonth
-    );
-    if (resolved) {
-      spreadsheetId = resolved.id;
-      autoResolvedDriveFile = true;
-      void logSpreadsheetRevenue("info", "auto-resolved Drive file from name pattern", {
-        locationId,
-        yearMonth,
-        spreadsheetId,
-        fileName: resolved.name,
-      });
-    }
-  }
-
-  if (!spreadsheetId) {
-    console.warn(
-      `[spreadsheet-revenue] location ${locationId}: no spreadsheetId and no shared 損益計算資料 file matching 拠点名「${location?.name ?? ""}」 and ${yearMonth}; returning empty revenue map`
-    );
-    void logSpreadsheetRevenue("warn", "no spreadsheetId and no auto-matched Drive file", {
+  if (!location) {
+    void logSpreadsheetRevenue("warn", "location not found for live Drive read", {
       locationId,
       yearMonth,
-      locationName: location?.name ?? null,
-      locationCode: location?.code ?? null,
     });
     return new Map();
   }
 
+  const fileResolved = await resolveSpreadsheetDriveFileForYearMonth(
+    locationId,
+    location,
+    yearMonth
+  );
+
+  if (!fileResolved.ok) {
+    console.warn(
+      `[spreadsheet-revenue] location ${locationId}: ${fileResolved.error}; returning empty revenue map`
+    );
+    void logSpreadsheetRevenue("warn", "Drive file resolution failed", {
+      locationId,
+      yearMonth,
+      locationName: location.name ?? null,
+      locationCode: location.code ?? null,
+      error: fileResolved.error,
+    });
+    return new Map();
+  }
+
+  const { spreadsheetId, driveFileName, canonicalYm, autoResolvedDriveFile } =
+    fileResolved;
+
+  if (autoResolvedDriveFile) {
+    void logSpreadsheetRevenue("info", "auto-resolved Drive file from name pattern", {
+      locationId,
+      yearMonth: canonicalYm,
+      spreadsheetId,
+      fileName: driveFileName,
+    });
+  }
+
   const parsed = await downloadAndParseRevenueMapFromDrive({
     locationId,
-    yearMonth,
+    yearMonth: canonicalYm,
     spreadsheetId,
     autoResolvedDriveFile,
-    location: location
-      ? {
-          spreadsheetRevenueSheet: location.spreadsheetRevenueSheet,
-          code: location.code,
-          name: location.name,
-        }
-      : null,
+    location: {
+      spreadsheetRevenueSheet: location.spreadsheetRevenueSheet,
+      code: location.code,
+      name: location.name,
+    },
     vehicleIds,
     revenueAccountItemIds,
   });
