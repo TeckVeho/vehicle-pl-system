@@ -39,6 +39,7 @@ network_remote_state_bucket = "izumi-vpl-terraform-state"
 network_remote_state_prefix = "network/stg"
 
 enable_sql_night_weekend_schedule = true
+sql_schedule_stop_cron            = "0 20 * * 1-5" # 20:00 JST (issue #95)
 enable_cron_cloud_scheduler       = false
 
 allow_unauthenticated     = false
