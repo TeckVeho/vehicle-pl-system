@@ -21,8 +21,9 @@ web_container_port = 3000
 # web_custom_domain = "vpl.izumilogi.com"
 
 env_vars = {
-  NODE_ENV = "production"
-  TIMEZONE = "Asia/Tokyo"
+  NODE_ENV     = "production"
+  TIMEZONE     = "Asia/Tokyo"
+  NODE_OPTIONS = "--max-old-space-size=192"
 }
 
 web_env_vars = {
@@ -30,6 +31,9 @@ web_env_vars = {
 }
 
 resource_tier = "tier3"
+
+# tier3 Cloud Run API memory is 256Mi. Cap Node heap via NODE_OPTIONS (see env_vars)
+# and backend/Dockerfile.prod — do not override cloud_run_api_memory unless profiling shows OOM.
 
 sql_database_name = "izumi_vehicle_pl_system"
 

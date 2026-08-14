@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { fetchApi } from "@/lib/api";
+import { formatSyncType } from "@/lib/sync-type-labels";
 import { RefreshCw, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -16,20 +17,6 @@ interface SyncLog {
   createdAt: string;
 }
 
-const SYNC_TYPE_LABELS: Record<string, string> = {
-  monthly_records: "月次損益データ",
-  daily_revenue: "日次売上",
-  daily_operating: "日次稼働",
-  driver_assignments: "乗務記録（タイムシート）",
-  atmtc_transactions: "ATMTC配送連携",
-  spreadsheet_revenue: "Drive 売上スナップショット",
-  account_items: "勘定科目マスタ",
-  users: "ユーザー",
-};
-
-function formatSyncType(type: string): string {
-  return SYNC_TYPE_LABELS[type] ?? type;
-}
 
 function formatDateTime(iso: string): string {
   const d = new Date(iso);
