@@ -84,27 +84,6 @@ jobs:
           ref: ${{ needs.workflow-context.outputs.sha }}
           fetch-depth: 0
 
-      - uses: dorny/paths-filter@v4
-        if: needs.workflow-context.outputs.ref_name == 'develop'
-        id: filter
-        with:
-          base: ${{ needs.workflow-context.outputs.sha }}~1
-          ref: ${{ needs.workflow-context.outputs.sha }}
-          filters: |
-            backend:
-              - 'backend/**'
-            frontend:
-              - 'src/**'
-              - 'public/**'
-              - 'Dockerfile.prod'
-              - 'next.config.mjs'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'tailwind.config.ts'
-              - 'postcss.config.mjs'
-              - 'components.json'
-              - 'tsconfig.json'
-
       - id: resolve
         env:
           REF_NAME: ${{ needs.workflow-context.outputs.ref_name }}
@@ -119,8 +98,18 @@ jobs:
             echo "build_mode=full" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          BE="${{ steps.filter.outputs.backend }}"
-          FE="${{ steps.filter.outputs.frontend }}"
+          # develop: diff this push commit against its parent (workflow_run has no push.before).
+          git fetch origin "${REF_NAME}" --depth=50
+          PARENT="$(git rev-parse HEAD^)"
+          BE=false
+          FE=false
+          while IFS= read -r file; do
+            [ -z "${file}" ] && continue
+            case "${file}" in
+              backend/*) BE=true ;;
+              src/*|public/*|Dockerfile.prod|next.config.mjs|package.json|package-lock.json|tailwind.config.ts|postcss.config.mjs|components.json|tsconfig.json) FE=true ;;
+            esac
+          done < <(git diff --name-only "${PARENT}" HEAD)
           if [ "${BE}" = "true" ] && [ "${FE}" = "true" ]; then
             echo "build_mode=full" >> "$GITHUB_OUTPUT"
           elif [ "${BE}" = "true" ]; then
