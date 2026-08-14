@@ -91,7 +91,7 @@ GitHub Actions runs on pull requests and pushes to `develop`, `staging`, and `pr
 | **CI** | `.github/workflows/ci.yml` | PR / push — lint, build, unit tests, E2E (MySQL service) |
 | **CD GCP** | `.github/workflows/cd-gcp.yml` | After CI succeeds on push, or `workflow_dispatch` |
 
-**CI pipeline:** path-aware on PRs (backend-only or frontend-only jobs skip when unrelated files change). Pushes to release branches run the full suite.
+**CI pipeline:** 2 checks on PR — **CI** (lint, build, unit tests) and **E2E** (Playwright). Path-aware on PRs: only the affected stack runs inside the CI job. Pushes to release branches run the full suite.
 
 **CD pipeline:** deploys to GCP Cloud Build only after the CI workflow completes successfully. On `develop`, deploy mode is inferred from changed paths (`backend` / `frontend` / `full`). `staging` and `production` always deploy full stack. Manual deploy: Actions → **CD GCP** → **Run workflow**.
 
