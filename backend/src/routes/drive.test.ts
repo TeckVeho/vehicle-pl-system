@@ -1,26 +1,12 @@
-import jwt from "jsonwebtoken";
+import "../__tests__/helpers/setup-prisma-mock.js";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getTestApp } from "../__tests__/helpers/app.js";
+import { masterToken, mockUser, signToken } from "../__tests__/helpers/auth.js";
+import { prismaMock } from "../__tests__/helpers/setup-prisma-mock.js";
 
-const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret-change-in-production";
-
-function signToken(role: string, userId: string) {
-  return jwt.sign(
-    { userId, email: `${userId}@test.local`, role },
-    JWT_SECRET,
-    { expiresIn: "7d" }
-  );
-}
-
-const { prismaMock, listSpreadsheetsInFolderMock } = vi.hoisted(() => ({
-  prismaMock: {
-    user: { findUnique: vi.fn() },
-  },
+const { listSpreadsheetsInFolderMock } = vi.hoisted(() => ({
   listSpreadsheetsInFolderMock: vi.fn(),
-}));
-
-vi.mock("../lib/prisma.js", () => ({
-  prisma: prismaMock,
 }));
 
 vi.mock("../lib/google-drive-client.js", async (importOriginal) => {
@@ -31,23 +17,12 @@ vi.mock("../lib/google-drive-client.js", async (importOriginal) => {
   };
 });
 
-import { createApp } from "../app.js";
-
-const app = createApp();
-
-function masterToken() {
-  return signToken("DX", "u1");
-}
+const app = getTestApp();
 
 describe("GET /api/drive/spreadsheets", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    prismaMock.user.findUnique.mockResolvedValue({
-      id: "u1",
-      email: "u1@test.local",
-      name: "Test",
-      role: "DX",
-    });
+    prismaMock.user.findUnique.mockResolvedValue(mockUser("DX", "u1"));
   });
 
   it("returns 401 without auth", async () => {
@@ -56,12 +31,7 @@ describe("GET /api/drive/spreadsheets", () => {
   });
 
   it("returns 403 when role is not MASTER", async () => {
-    prismaMock.user.findUnique.mockResolvedValue({
-      id: "u2",
-      email: "u2@test.local",
-      name: "Crew",
-      role: "CREW",
-    });
+    prismaMock.user.findUnique.mockResolvedValue(mockUser("CREW", "u2", "Crew"));
     const token = signToken("CREW", "u2");
     const res = await request(app)
       .get("/api/drive/spreadsheets?folderId=abc")

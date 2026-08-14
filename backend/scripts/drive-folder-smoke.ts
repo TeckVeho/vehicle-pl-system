@@ -22,7 +22,7 @@
  */
 import {
   downloadDriveFileAsXlsxBuffer,
-  getDriveClient,
+  listFilesInFolder,
   listSpreadsheetsInFolder,
 } from "../src/lib/google-drive-client.js";
 
@@ -53,17 +53,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const drive = getDriveClient();
-
-  const list = await drive.files.list({
-    q: `'${folderId}' in parents and trashed = false`,
-    fields: "files(id, name, mimeType, size)",
-    pageSize: 25,
-    supportsAllDrives: true,
-    includeItemsFromAllDrives: true,
-  });
-
-  const files = list.data.files ?? [];
+  const files = await listFilesInFolder(folderId, { pageSize: 25 });
   console.log(`Found ${files.length} item(s) in folder ${folderId}:\n`);
   for (const f of files) {
     console.log(

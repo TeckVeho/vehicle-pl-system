@@ -72,8 +72,13 @@ bash google-cloud/scripts/cloud-build-submit.sh google-cloud/cloudbuild/cloudbui
 | `google-cloud/cloudbuild/` | Cloud Build YAML |
 | `google-cloud/terraform/` | Terraform modules + Terragrunt live |
 | `google-cloud/scripts/` | Local deploy helpers |
-| `.github/workflows/cd-gcp.yml` | CI/CD via GitHub Actions + WIF |
+| `.github/workflows/ci.yml` | Lint, build, tests, E2E on PR / push |
+| `.github/workflows/cd-gcp.yml` | GCP deploy after CI succeeds (or manual dispatch) |
 
 ## CI/CD
+
+**CI** (`.github/workflows/ci.yml`) runs on pull requests and pushes to `develop`, `staging`, and `production`.
+
+**CD** (`.github/workflows/cd-gcp.yml`) runs after CI completes successfully on push, or via manual `workflow_dispatch`.
 
 Configure GitHub repository secrets and variables per [cloudbuild/GITHUB_ACTIONS_WIF.md](cloudbuild/GITHUB_ACTIONS_WIF.md).
