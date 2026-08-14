@@ -19,7 +19,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: `bash scripts/e2e-prepare-db.sh && cd backend && DATABASE_URL="${e2eDatabaseUrl}" CORS_ORIGIN="http://localhost:3000" npm run dev`,
+      command: `bash scripts/e2e-prepare-db.sh && cd backend && DATABASE_URL="${e2eDatabaseUrl}" CORS_ORIGIN="http://localhost:3000" npm run dev:e2e`,
       url: "http://localhost:4000/api/health",
       reuseExistingServer: !process.env.CI,
       timeout: 180_000,
