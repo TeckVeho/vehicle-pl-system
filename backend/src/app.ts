@@ -16,6 +16,10 @@ export function createApp(): express.Application {
   app.use(cookieParser());
   app.use(express.json({ limit: "5mb" }));
 
+  app.get("/api/health", (_req, res) => {
+    res.json({ ok: true });
+  });
+
   app.use("/api", apiRouter);
   return app;
 }

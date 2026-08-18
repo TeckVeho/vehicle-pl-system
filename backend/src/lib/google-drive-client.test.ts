@@ -1,38 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const {
-  googleAuthMock,
-  driveFactoryMock,
-  filesGetMock,
-  filesExportMock,
-  filesListMock,
-} = vi.hoisted(() => {
-  const googleAuthMock = vi.fn();
-  const filesGetMock = vi.fn();
-  const filesExportMock = vi.fn();
-  const filesListMock = vi.fn();
-  const driveFactoryMock = vi.fn(() => ({
-    files: {
-      get: filesGetMock,
-      export: filesExportMock,
-      list: filesListMock,
-    },
+const { googleAuthCtorMock, authRequestMock } = vi.hoisted(() => {
+  const authRequestMock = vi.fn();
+  const googleAuthCtorMock = vi.fn(() => ({
+    getClient: vi.fn(async () => ({ request: authRequestMock })),
   }));
-  return {
-    googleAuthMock,
-    driveFactoryMock,
-    filesGetMock,
-    filesExportMock,
-    filesListMock,
-  };
+  return { googleAuthCtorMock, authRequestMock };
 });
 
-vi.mock("googleapis", () => ({
-  google: {
-    auth: { GoogleAuth: googleAuthMock },
-    drive: driveFactoryMock,
-  },
-  drive_v3: {},
+vi.mock("google-auth-library", () => ({
+  GoogleAuth: googleAuthCtorMock,
+  OAuth2Client: class OAuth2Client {},
 }));
 
 import {
@@ -96,31 +74,29 @@ describe("getDriveClient", () => {
     restoreDriveFolderEnv();
   });
 
-  it("throws when GOOGLE_SERVICE_ACCOUNT_JSON is not set", () => {
-    expect(() => getDriveClient()).toThrow(
+  it("throws when GOOGLE_SERVICE_ACCOUNT_JSON is not set", async () => {
+    await expect(getDriveClient()).rejects.toThrow(
       "[google-drive] GOOGLE_SERVICE_ACCOUNT_JSON is not set"
     );
-    expect(googleAuthMock).not.toHaveBeenCalled();
-    expect(driveFactoryMock).not.toHaveBeenCalled();
+    expect(googleAuthCtorMock).not.toHaveBeenCalled();
   });
 
-  it("throws when GOOGLE_SERVICE_ACCOUNT_JSON is empty or whitespace-only", () => {
+  it("throws when GOOGLE_SERVICE_ACCOUNT_JSON is empty or whitespace-only", async () => {
     process.env.GOOGLE_SERVICE_ACCOUNT_JSON = "   ";
-    expect(() => getDriveClient()).toThrow(
+    await expect(getDriveClient()).rejects.toThrow(
       "[google-drive] GOOGLE_SERVICE_ACCOUNT_JSON is not set"
     );
   });
 
-  it("wraps JSON parse errors with a friendly prefix", () => {
+  it("wraps JSON parse errors with a friendly prefix", async () => {
     process.env.GOOGLE_SERVICE_ACCOUNT_JSON = "not-json";
-    expect(() => getDriveClient()).toThrow(
+    await expect(getDriveClient()).rejects.toThrow(
       /\[google-drive\] GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON:/
     );
-    expect(googleAuthMock).not.toHaveBeenCalled();
-    expect(driveFactoryMock).not.toHaveBeenCalled();
+    expect(googleAuthCtorMock).not.toHaveBeenCalled();
   });
 
-  it("throws when a required service-account field is missing", () => {
+  it("throws when a required service-account field is missing", async () => {
     const partial = JSON.parse(minimalServiceAccountJson) as Record<
       string,
       unknown
@@ -128,13 +104,13 @@ describe("getDriveClient", () => {
     delete partial.client_email;
     process.env.GOOGLE_SERVICE_ACCOUNT_JSON = JSON.stringify(partial);
 
-    expect(() => getDriveClient()).toThrow(
+    await expect(getDriveClient()).rejects.toThrow(
       "[google-drive] service account JSON missing field: client_email"
     );
-    expect(googleAuthMock).not.toHaveBeenCalled();
+    expect(googleAuthCtorMock).not.toHaveBeenCalled();
   });
 
-  it("throws when credentials.type is not service_account", () => {
+  it("throws when credentials.type is not service_account", async () => {
     const wrongType = JSON.parse(minimalServiceAccountJson) as Record<
       string,
       unknown
@@ -142,28 +118,22 @@ describe("getDriveClient", () => {
     wrongType.type = "user";
     process.env.GOOGLE_SERVICE_ACCOUNT_JSON = JSON.stringify(wrongType);
 
-    expect(() => getDriveClient()).toThrow(
+    await expect(getDriveClient()).rejects.toThrow(
       '[google-drive] credentials.type must be "service_account"'
     );
   });
 
-  it("returns the same singleton and builds drive v3 client with readonly scope", () => {
+  it("returns the same singleton auth client with readonly scope", async () => {
     process.env.GOOGLE_SERVICE_ACCOUNT_JSON = minimalServiceAccountJson;
 
-    const client = getDriveClient();
+    const client = await getDriveClient();
     expect(client).toBeDefined();
-    expect(getDriveClient()).toBe(client);
+    expect(await getDriveClient()).toBe(client);
 
-    expect(googleAuthMock).toHaveBeenCalledTimes(1);
-    expect(googleAuthMock).toHaveBeenCalledWith({
+    expect(googleAuthCtorMock).toHaveBeenCalledTimes(1);
+    expect(googleAuthCtorMock).toHaveBeenCalledWith({
       credentials: JSON.parse(minimalServiceAccountJson),
       scopes: ["https://www.googleapis.com/auth/drive.readonly"],
-    });
-
-    expect(driveFactoryMock).toHaveBeenCalledTimes(1);
-    expect(driveFactoryMock).toHaveBeenCalledWith({
-      version: "v3",
-      auth: expect.anything(),
     });
   });
 });
@@ -190,60 +160,61 @@ describe("downloadDriveFileAsXlsxBuffer", () => {
     await expect(downloadDriveFileAsXlsxBuffer("  ")).rejects.toThrow(
       /empty fileId/
     );
-    expect(filesGetMock).not.toHaveBeenCalled();
-    expect(filesExportMock).not.toHaveBeenCalled();
+    expect(authRequestMock).not.toHaveBeenCalled();
   });
 
   it("exports native Google Sheets to xlsx and returns a Buffer", async () => {
     const payload = new Uint8Array([1, 2, 3, 4, 5]).buffer;
-    filesGetMock.mockResolvedValueOnce({
-      data: { mimeType: MIME_GOOGLE_SHEETS, name: "sheet" },
-    });
-    filesExportMock.mockResolvedValueOnce({ data: payload });
+    authRequestMock
+      .mockResolvedValueOnce({
+        data: { mimeType: MIME_GOOGLE_SHEETS, name: "sheet" },
+      })
+      .mockResolvedValueOnce({ data: payload });
 
     const buf = await downloadDriveFileAsXlsxBuffer("file-1");
 
-    expect(filesGetMock).toHaveBeenNthCalledWith(1, {
-      fileId: "file-1",
-      fields: "mimeType, name",
-      supportsAllDrives: true,
+    expect(authRequestMock).toHaveBeenNthCalledWith(1, {
+      url: "https://www.googleapis.com/drive/v3/files/file-1",
+      method: "GET",
+      params: {
+        fields: "mimeType, name",
+        supportsAllDrives: true,
+      },
+      responseType: "json",
     });
-    expect(filesExportMock).toHaveBeenCalledWith(
-      { fileId: "file-1", mimeType: MIME_XLSX },
-      { responseType: "arraybuffer" }
-    );
-    expect(filesGetMock).toHaveBeenCalledTimes(1);
+    expect(authRequestMock).toHaveBeenNthCalledWith(2, {
+      url: "https://www.googleapis.com/drive/v3/files/file-1/export",
+      method: "GET",
+      params: { mimeType: MIME_XLSX },
+      responseType: "arraybuffer",
+    });
     expect(Buffer.isBuffer(buf)).toBe(true);
     expect(buf.byteLength).toBe(5);
   });
 
   it("downloads non-Google-Workspace files via alt=media", async () => {
     const payload = new Uint8Array([9, 9, 9]).buffer;
-    filesGetMock.mockResolvedValueOnce({
-      data: { mimeType: MIME_XLSX, name: "report.xlsx" },
-    });
-    filesGetMock.mockResolvedValueOnce({ data: payload });
+    authRequestMock
+      .mockResolvedValueOnce({
+        data: { mimeType: MIME_XLSX, name: "report.xlsx" },
+      })
+      .mockResolvedValueOnce({ data: payload });
 
     const buf = await downloadDriveFileAsXlsxBuffer("file-2");
 
-    expect(filesGetMock).toHaveBeenCalledTimes(2);
-    expect(filesGetMock).toHaveBeenNthCalledWith(1, {
-      fileId: "file-2",
-      fields: "mimeType, name",
-      supportsAllDrives: true,
+    expect(authRequestMock).toHaveBeenCalledTimes(2);
+    expect(authRequestMock).toHaveBeenNthCalledWith(2, {
+      url: "https://www.googleapis.com/drive/v3/files/file-2",
+      method: "GET",
+      params: { alt: "media", supportsAllDrives: true },
+      responseType: "arraybuffer",
     });
-    expect(filesGetMock).toHaveBeenNthCalledWith(
-      2,
-      { fileId: "file-2", alt: "media", supportsAllDrives: true },
-      { responseType: "arraybuffer" }
-    );
-    expect(filesExportMock).not.toHaveBeenCalled();
     expect(Buffer.isBuffer(buf)).toBe(true);
     expect(buf.byteLength).toBe(3);
   });
 
   it("propagates Drive errors so callers can decide fallback", async () => {
-    filesGetMock.mockRejectedValueOnce(new Error("drive boom"));
+    authRequestMock.mockRejectedValueOnce(new Error("drive boom"));
 
     await expect(downloadDriveFileAsXlsxBuffer("file-3")).rejects.toThrow(
       "drive boom"
@@ -301,26 +272,31 @@ describe("listSharedPlSpreadsheetFileRefs", () => {
     const refs = await listSharedPlSpreadsheetFileRefs();
 
     expect(refs).toEqual([]);
-    expect(filesListMock).not.toHaveBeenCalled();
-    expect(driveFactoryMock).not.toHaveBeenCalled();
+    expect(authRequestMock).not.toHaveBeenCalled();
+    expect(googleAuthCtorMock).not.toHaveBeenCalled();
   });
 
   it("lists direct children of folder when google_drive_folder_id is set", async () => {
     process.env.google_drive_folder_id = "folderABC";
-    filesListMock.mockResolvedValueOnce({
-      data: { files: [{ id: "b", name: "損益計算資料_y" }], nextPageToken: null },
+    authRequestMock.mockResolvedValueOnce({
+      data: { files: [{ id: "b", name: "損益計算資料_y" }], nextPageToken: undefined },
     });
 
     const refs = await listSharedPlSpreadsheetFileRefs();
 
     expect(refs).toEqual([{ id: "b", name: "損益計算資料_y" }]);
-    expect(filesListMock).toHaveBeenCalledWith({
-      q: "'folderABC' in parents and trashed = false and name contains '損益計算資料'",
-      fields: "nextPageToken, files(id, name)",
-      pageSize: 100,
-      pageToken: undefined,
-      supportsAllDrives: true,
-      includeItemsFromAllDrives: true,
+    expect(authRequestMock).toHaveBeenCalledWith({
+      url: "https://www.googleapis.com/drive/v3/files",
+      method: "GET",
+      params: {
+        q: "'folderABC' in parents and trashed = false and name contains '損益計算資料'",
+        fields: "nextPageToken, files(id, name)",
+        pageSize: 100,
+        pageToken: undefined,
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      },
+      responseType: "json",
     });
   });
 });
@@ -347,14 +323,14 @@ describe("listSpreadsheetsInFolder", () => {
     await expect(listSpreadsheetsInFolder("  ")).rejects.toThrow(
       "[google-drive] listSpreadsheetsInFolder: empty folderId"
     );
-    expect(filesListMock).not.toHaveBeenCalled();
+    expect(authRequestMock).not.toHaveBeenCalled();
   });
 
   it("queries direct children with native Sheets and xlsx mimeType filter", async () => {
-    filesListMock.mockResolvedValueOnce({
+    authRequestMock.mockResolvedValueOnce({
       data: {
         files: [{ id: "s2", name: "B sheet" }, { id: "s1", name: "A sheet" }],
-        nextPageToken: null,
+        nextPageToken: undefined,
       },
     });
 
@@ -364,18 +340,23 @@ describe("listSpreadsheetsInFolder", () => {
       { id: "s1", name: "A sheet" },
       { id: "s2", name: "B sheet" },
     ]);
-    expect(filesListMock).toHaveBeenCalledWith({
-      q: `'folderXYZ' in parents and trashed = false and (mimeType = '${MIME_GOOGLE_SHEETS}' or mimeType = '${MIME_XLSX}')`,
-      fields: "nextPageToken, files(id, name)",
-      pageSize: 100,
-      pageToken: undefined,
-      supportsAllDrives: true,
-      includeItemsFromAllDrives: true,
+    expect(authRequestMock).toHaveBeenCalledWith({
+      url: "https://www.googleapis.com/drive/v3/files",
+      method: "GET",
+      params: {
+        q: `'folderXYZ' in parents and trashed = false and (mimeType = '${MIME_GOOGLE_SHEETS}' or mimeType = '${MIME_XLSX}')`,
+        fields: "nextPageToken, files(id, name)",
+        pageSize: 100,
+        pageToken: undefined,
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      },
+      responseType: "json",
     });
   });
 
   it("paginates across multiple pages", async () => {
-    filesListMock
+    authRequestMock
       .mockResolvedValueOnce({
         data: {
           files: [{ id: "p1", name: "Page 1" }],
@@ -385,7 +366,7 @@ describe("listSpreadsheetsInFolder", () => {
       .mockResolvedValueOnce({
         data: {
           files: [{ id: "p2", name: "Page 2" }],
-          nextPageToken: null,
+          nextPageToken: undefined,
         },
       });
 
@@ -395,15 +376,19 @@ describe("listSpreadsheetsInFolder", () => {
       { id: "p1", name: "Page 1" },
       { id: "p2", name: "Page 2" },
     ]);
-    expect(filesListMock).toHaveBeenCalledTimes(2);
-    expect(filesListMock).toHaveBeenNthCalledWith(
+    expect(authRequestMock).toHaveBeenCalledTimes(2);
+    expect(authRequestMock).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ pageToken: "token-2" })
+      expect.objectContaining({
+        params: expect.objectContaining({ pageToken: "token-2" }),
+      })
     );
   });
 
   it("propagates Drive API errors", async () => {
-    filesListMock.mockRejectedValueOnce(Object.assign(new Error("forbidden"), { code: 403 }));
+    authRequestMock.mockRejectedValueOnce(
+      Object.assign(new Error("forbidden"), { code: 403 })
+    );
 
     await expect(listSpreadsheetsInFolder("folderDenied")).rejects.toMatchObject({
       code: 403,
