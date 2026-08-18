@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
-# Import vehicle-pl SQL dump into Cloud SQL dev (izumi-vehicle-pl-system).
+# Import vehicle-pl SQL dump into Cloud SQL (dev hub or legacy instance).
+#
+# Dev hub (after issue #99 cutover):
+#   SQL_INSTANCE=dev-sql-hub SQL_PROJECT=gcp-dev-sql-hub SQL_DATABASE=izumi-vpl-dev \
+#     bash google-cloud/scripts/import-vehicle-pl-db-dev.sh /path/to/dump.sql
+#
+# Legacy dev instance:
+#   bash google-cloud/scripts/import-vehicle-pl-db-dev.sh /path/to/dump.sql
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -7,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/load-env.sh"
 
 DUMP_PATH="${1:-}"
-PROJECT="${GCP_PROJECT_ID}"
+PROJECT="${SQL_PROJECT:-${GCP_PROJECT_ID}}"
 INSTANCE="${SQL_INSTANCE:-izumi-vpl-mysql-dev}"
 DATABASE="${SQL_DATABASE:-izumi-vehicle-pl-system}"
 RECREATE_DATABASE="${RECREATE_DATABASE:-false}"

@@ -1,5 +1,17 @@
 # vehicle-pl-system — dev/app (izumi-vpl)
 # Copy to terraform.tfvars (gitignored). Secrets via Secret Manager only.
+#
+# Dev SQL → shared hub (issue #99 / drivee-link-2 pattern):
+#   Cloud Run Direct VPC → gcp-dev-sql-hub subnet (Shared VPC)
+#   Cloud SQL instance: gcp-dev-sql-hub:asia-northeast1:dev-sql-hub
+#   Logical DB: izumi_vpl_dev (Terraform normalizes to izumi-vpl-dev)
+#
+# Prerequisites:
+#   - izumi-vpl listed in hub consumers.tf (platform gcp-monitoring #147)
+#   - Shared VPC service project attach for izumi-vpl
+#   - Export izumi-vpl-mysql-dev dump BEFORE first apply (see docs/sql-dev-hub-migration.md)
+#
+# Do not enable sql night/weekend schedule against the hub.
 
 project_id = "izumi-vpl"
 env_suffix = "dev"
@@ -11,9 +23,10 @@ container_port     = 8080
 web_container_port = 3000
 
 env_vars = {
-  NODE_ENV    = "production"
-  TIMEZONE    = "Asia/Tokyo"
-  CORS_ORIGIN = "https://REPLACE-WITH-WEB-CLOUD-RUN-URL"
+  NODE_ENV     = "production"
+  TIMEZONE     = "Asia/Tokyo"
+  NODE_OPTIONS = "--max-old-space-size=192"
+  CORS_ORIGIN  = "https://REPLACE-WITH-WEB-CLOUD-RUN-URL"
 }
 
 web_env_vars = {
@@ -24,18 +37,26 @@ web_env_vars = {
 
 resource_tier = "tier3"
 
-# tier3 default 256Mi can OOM Node+Prisma on API; override if login/sync fails with HTTP 503.
-# cloud_run_api_memory = "512Mi"
-
-sql_database_name = "vehicle_pl_system"
-
-enable_gcs       = false
 enable_cloud_sql = true
+
+# Hub Cloud SQL (no local izumi-vpl-mysql-dev instance)
+external_cloud_sql_connection_name = "gcp-dev-sql-hub:asia-northeast1:dev-sql-hub"
+sql_instance_project               = "gcp-dev-sql-hub"
+cloudsql_client_iam_project        = "gcp-dev-sql-hub"
+grant_cloudsql_client_iam          = false # Hub IAM via gcp-monitoring consumers.tf (#147)
+sql_instance_name                  = "dev-sql-hub"
+sql_database_name                  = "izumi_vpl_dev"
+sql_user_name                      = "izumi_vpl_dev"
+
+# Direct VPC into hub Shared VPC subnet (no peering transit)
+vpc_network_override    = "projects/gcp-dev-sql-hub/global/networks/dev-sql-hub-vpc"
+vpc_subnetwork_override = "projects/gcp-dev-sql-hub/regions/asia-northeast1/subnetworks/dev-sql-hub-subnet"
+
 network_remote_state_bucket = "izumi-vpl-terraform-state"
 network_remote_state_prefix = "network/dev"
 
-enable_sql_night_weekend_schedule = true
-sql_schedule_stop_cron            = "0 20 * * 1-5" # 20:00 JST (issue #95)
+enable_gcs       = false
+enable_sql_night_weekend_schedule = false
 enable_cron_cloud_scheduler       = false
 
 allow_unauthenticated     = true

@@ -324,7 +324,7 @@ variable "vertex_ai_location" {
 variable "enable_cloud_sql" {
   type        = bool
   default     = false
-  description = "Create MySQL instance, database, user, Secret Manager secret, and attach to the API Cloud Run service."
+  description = "Attach Cloud SQL to Cloud Run (VPC/volume/jobs/DATABASE_URL). Instance create uses create_sql_instance (via sql_shared_with_env_suffix / external_cloud_sql_connection_name)."
 }
 
 variable "sql_instance_name" {
@@ -373,6 +373,58 @@ variable "sql_user_name" {
     Application MySQL user name. If empty, uses the same name as the logical database ({project_id}-mysql-{env_suffix}).
     Set explicitly only when keeping a legacy user to avoid Terraform replacing the user.
   EOT
+}
+
+variable "sql_shared_with_env_suffix" {
+  type        = string
+  default     = ""
+  description = <<-EOT
+  Share an existing env's Cloud SQL instance instead of creating a dedicated instance.
+  Example: stg sets "prod" to use {project_id}-mysql-prod with a separate database izumi-vpl-stg.
+  Implies create_sql_instance = false for this stack. Disables sql night/weekend schedule automatically.
+  Mutually exclusive with external_cloud_sql_connection_name (Dev SQL hub).
+  EOT
+
+  validation {
+    condition     = var.sql_shared_with_env_suffix == "" || can(regex("^[a-z0-9-]{1,16}$", var.sql_shared_with_env_suffix))
+    error_message = "sql_shared_with_env_suffix must be lowercase letters, digits, hyphens, max 16 chars, or empty."
+  }
+}
+
+variable "external_cloud_sql_connection_name" {
+  type        = string
+  default     = ""
+  description = "PROJECT:REGION:INSTANCE when Dev uses shared SQL hub (create_sql_instance=false). Example: gcp-dev-sql-hub:asia-northeast1:dev-sql-hub"
+}
+
+variable "sql_instance_project" {
+  type        = string
+  default     = ""
+  description = "Project owning the SQL instance for DB/user resources. Empty → project_id. Use gcp-dev-sql-hub for Dev→Hub."
+}
+
+variable "cloudsql_client_iam_project" {
+  type        = string
+  default     = ""
+  description = "Project for roles/cloudsql.client grant. Empty → project_id. Use gcp-dev-sql-hub for Dev→Hub."
+}
+
+variable "grant_cloudsql_client_iam" {
+  type        = bool
+  default     = true
+  description = "Grant roles/cloudsql.client via Terraform. false when hub consumers.tf grants IAM on gcp-dev-sql-hub."
+}
+
+variable "vpc_network_override" {
+  type        = string
+  default     = ""
+  description = "Full network id for Cloud Run Direct VPC (e.g. projects/gcp-dev-sql-hub/global/networks/dev-sql-hub-vpc). Empty → network remote state."
+}
+
+variable "vpc_subnetwork_override" {
+  type        = string
+  default     = ""
+  description = "Full subnet id for Cloud Run Direct VPC. Empty → network remote state connector subnet."
 }
 
 variable "sql_backup_enabled" {
