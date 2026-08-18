@@ -4,7 +4,46 @@
 variable "enable_cloud_sql" {
   type        = bool
   default     = false
-  description = "Create MySQL instance, database, user, Secret Manager secret, and attach to the API Cloud Run service."
+  description = "Create MySQL database, user, Secret Manager secret, and attach to the API Cloud Run service. Optionally create the instance (see create_sql_instance)."
+}
+
+variable "create_sql_instance" {
+  type        = bool
+  default     = true
+  description = <<-EOT
+    When true (default), create a dedicated Cloud SQL instance for this env.
+    When false, attach database + user to sql_shared_instance_name (stg on prod instance).
+  EOT
+}
+
+variable "sql_shared_instance_name" {
+  type        = string
+  default     = ""
+  description = "Existing Cloud SQL instance id when create_sql_instance is false (same project, e.g. izumi-vpl-mysql-prod)."
+}
+
+variable "external_cloud_sql_connection_name" {
+  type        = string
+  default     = ""
+  description = "PROJECT:REGION:INSTANCE when create_sql_instance=false and DB lives on an external instance (e.g. Dev SQL hub)."
+}
+
+variable "sql_instance_project" {
+  type        = string
+  default     = ""
+  description = "Project owning the SQL instance for DB/user resources. Empty → project_id. Use gcp-dev-sql-hub for Dev→Hub."
+}
+
+variable "cloudsql_client_iam_project" {
+  type        = string
+  default     = ""
+  description = "Project for roles/cloudsql.client grant. Empty → project_id. Use gcp-dev-sql-hub for Dev→Hub."
+}
+
+variable "grant_cloudsql_client_iam" {
+  type        = bool
+  default     = true
+  description = "Grant roles/cloudsql.client via Terraform. Set false when hub consumers.tf grants IAM (no setIamPolicy on gcp-dev-sql-hub)."
 }
 
 variable "enable_sql_audit" {

@@ -1,12 +1,20 @@
 # vehicle-pl-system — stg/app (single project izumi-vpl)
 # Copy to terraform.tfvars (gitignored). Secrets via Secret Manager only.
 #
+# Stg shares the prod Cloud SQL instance; only database + user are env-specific:
+#   Instance : izumi-vpl-mysql-prod (owned by live/prod/app)
+#   Database : izumi-vpl-stg
+#   Secret   : izumi-vpl-database-url-stg
+#
+# Cloud Run Stg uses Direct VPC on the **prod** VPC (same VPC as the SQL private IP).
+# Do NOT enable SQL night/weekend stop (would stop Prod DB too).
+#
+# Migration from izumi-vpl-mysql-stg: google-cloud/docs/sql-stg-prod-shared-instance.md
+#
 # Resource names (project_id + env_suffix):
 #   Cloud Run : izumi-vpl-api-stg, izumi-vpl-web-stg, izumi-vpl-migrate-stg
-#   Cloud SQL : izumi-vpl-mysql-stg
-#   VPC       : izumi-vpl-vpc-stg
-#   Secrets   : izumi-vpl-jwt-secret-stg, ...
-#   Images    : izumi-vpl-api:stage, izumi-vpl-web:stage (Artifact Registry tag)
+#   VPC       : izumi-vpl-vpc-stg (SQL uses prod VPC via sql_shared_with_env_suffix)
+#   Images    : izumi-vpl-api:stage, izumi-vpl-web:stage
 
 project_id = "izumi-vpl"
 env_suffix = "stg"
@@ -21,8 +29,9 @@ api_custom_domain = "vpl-stage-api.izumilogi.com"
 web_custom_domain = "vpl-stage.izumilogi.com"
 
 env_vars = {
-  NODE_ENV = "production"
-  TIMEZONE = "Asia/Tokyo"
+  NODE_ENV     = "production"
+  TIMEZONE     = "Asia/Tokyo"
+  NODE_OPTIONS = "--max-old-space-size=192"
 }
 
 web_env_vars = {
@@ -31,15 +40,17 @@ web_env_vars = {
 
 resource_tier = "tier3"
 
-sql_database_name = "izumi_vehicle_pl_system"
+sql_database_name = "izumi_vpl_stg"
+sql_user_name     = "izumi_vpl_stg"
 
 enable_gcs       = false
 enable_cloud_sql = true
+sql_shared_with_env_suffix = "prod"
+
 network_remote_state_bucket = "izumi-vpl-terraform-state"
 network_remote_state_prefix = "network/stg"
 
-enable_sql_night_weekend_schedule = true
-sql_schedule_stop_cron            = "0 20 * * 1-5" # 20:00 JST (issue #95)
+enable_sql_night_weekend_schedule = false
 enable_cron_cloud_scheduler       = false
 
 allow_unauthenticated     = false

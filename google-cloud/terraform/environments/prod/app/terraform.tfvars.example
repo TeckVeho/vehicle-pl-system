@@ -1,11 +1,18 @@
 # vehicle-pl-system — prod/app (single project izumi-vpl)
 # Copy to terraform.tfvars (gitignored). Secrets via Secret Manager only.
 #
+# Prod owns the shared Cloud SQL instance for stg + prod (separate logical databases):
+#   Instance : izumi-vpl-mysql-prod
+#   Database : izumi-vpl-prod
+#   Stg DB   : izumi-vpl-stg (created by live/stg/app with sql_shared_with_env_suffix = "prod")
+#
+# Stg Cloud Run attaches to this instance + prod VPC (network/prod).
+# Export/remove old izumi-vpl-mysql-stg via Console after cutover.
+#
 # Resource names (project_id + env_suffix):
 #   Cloud Run : izumi-vpl-api-prod, izumi-vpl-web-prod, izumi-vpl-migrate-prod
 #   Cloud SQL : izumi-vpl-mysql-prod
 #   VPC       : izumi-vpl-vpc-prod
-#   Secrets   : izumi-vpl-jwt-secret-prod, ...
 #   Images    : izumi-vpl-api:prod, izumi-vpl-web:prod
 
 project_id = "izumi-vpl"
@@ -35,7 +42,8 @@ resource_tier = "tier3"
 # tier3 Cloud Run API memory is 256Mi. Cap Node heap via NODE_OPTIONS (see env_vars)
 # and backend/Dockerfile.prod — do not override cloud_run_api_memory unless profiling shows OOM.
 
-sql_database_name = "izumi_vehicle_pl_system"
+sql_database_name = "izumi_vpl_prod"
+sql_user_name     = "izumi_vpl_prod"
 
 enable_gcs       = false
 enable_cloud_sql = true
