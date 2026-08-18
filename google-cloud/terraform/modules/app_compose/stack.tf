@@ -62,6 +62,12 @@ module "cloud_sql" {
   source = "../cloud_sql"
 
   enable_cloud_sql                   = var.enable_cloud_sql
+  create_sql_instance                = local.sql_create_instance_effective
+  sql_shared_instance_name           = local.sql_shared_instance_name_effective
+  external_cloud_sql_connection_name = var.external_cloud_sql_connection_name
+  sql_instance_project               = var.sql_instance_project
+  cloudsql_client_iam_project        = var.cloudsql_client_iam_project
+  grant_cloudsql_client_iam          = var.grant_cloudsql_client_iam
   enable_sql_audit                   = var.enable_sql_audit
   env_suffix                         = var.env_suffix
   project_id                         = var.project_id
@@ -72,7 +78,11 @@ module "cloud_sql" {
   sql_instance_name                  = var.sql_instance_name
   sql_point_in_time_recovery_enabled = var.sql_point_in_time_recovery_enabled
   sql_user_name                      = var.sql_user_name
-  network_self_link                  = var.enable_cloud_sql ? data.terraform_remote_state.network[0].outputs.network_self_link : ""
+  network_self_link = (
+    var.enable_cloud_sql && local.sql_create_instance_effective && length(data.terraform_remote_state.network) > 0
+    ? data.terraform_remote_state.network[0].outputs.network_self_link
+    : ""
+  )
   cloud_run_service_account          = local.cloud_run_service_account
   sql_tier_effective                 = local.sql_tier_effective
   sql_disk_size_gb_effective         = local.sql_disk_size_gb_effective
@@ -115,8 +125,8 @@ module "cloud_run" {
   web_custom_domain                     = var.web_custom_domain
   web_env_vars                          = var.web_env_vars
   web_secret_env_from_sm                = var.web_secret_env_from_sm
-  network_id                            = var.enable_cloud_sql ? data.terraform_remote_state.network[0].outputs.network_id : ""
-  connector_subnet_name                 = var.enable_cloud_sql ? data.terraform_remote_state.network[0].outputs.connector_subnet_name : ""
+  network_id                            = local.cloud_run_network_id
+  connector_subnet_name                 = local.cloud_run_connector_subnet_name
   cloud_sql_connection_name             = module.cloud_sql.cloud_sql_connection_name != null ? module.cloud_sql.cloud_sql_connection_name : ""
   database_url_secret_name              = module.cloud_sql.database_url_secret_name != null ? module.cloud_sql.database_url_secret_name : ""
   database_url_secret_version_name      = module.cloud_sql.database_url_secret_version_name != null ? module.cloud_sql.database_url_secret_version_name : ""
@@ -169,7 +179,7 @@ module "sql_schedule" {
     google_project_service.cloudscheduler,
   ]
   enable_cloud_sql                  = var.enable_cloud_sql
-  enable_sql_night_weekend_schedule = var.enable_sql_night_weekend_schedule
+  enable_sql_night_weekend_schedule = var.enable_sql_night_weekend_schedule && local.sql_create_instance_effective
   env_suffix                        = var.env_suffix
   project_id                        = var.project_id
   region                            = var.region

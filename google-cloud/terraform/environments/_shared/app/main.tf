@@ -41,6 +41,13 @@ module "app_compose" {
   enable_vertex_ai                   = var.enable_vertex_ai
   vertex_ai_location                 = var.vertex_ai_location
   enable_cloud_sql                   = var.enable_cloud_sql
+  sql_shared_with_env_suffix         = var.sql_shared_with_env_suffix
+  external_cloud_sql_connection_name = var.external_cloud_sql_connection_name
+  sql_instance_project               = var.sql_instance_project
+  cloudsql_client_iam_project        = var.cloudsql_client_iam_project
+  grant_cloudsql_client_iam          = var.grant_cloudsql_client_iam
+  vpc_network_override               = var.vpc_network_override
+  vpc_subnetwork_override            = var.vpc_subnetwork_override
   sql_instance_name                  = var.sql_instance_name
   sql_tier                           = var.sql_tier
   sql_disk_size_gb                   = var.sql_disk_size_gb

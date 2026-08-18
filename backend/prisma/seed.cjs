@@ -9,6 +9,13 @@ const ADMIN_USER = {
   role: "DX管理者",
 };
 
+const CREW_USER = {
+  email: "crew@example.com",
+  password: "password",
+  name: "乗務員",
+  role: "CREW",
+};
+
 const ACCOUNT_ITEMS = [
   { code: "5010", name: "山崎製パン", category: "revenue", sortOrder: 1 },
   { code: "5010", name: "ヤマザキ物流", category: "revenue", sortOrder: 2 },
@@ -107,6 +114,18 @@ async function main() {
       passwordHash: adminPasswordHash,
       name: ADMIN_USER.name,
       role: ADMIN_USER.role,
+    },
+  });
+
+  const crewPasswordHash = await bcrypt.hash(CREW_USER.password, 10);
+  await prisma.user.upsert({
+    where: { email: CREW_USER.email },
+    update: { name: CREW_USER.name, role: CREW_USER.role, passwordHash: crewPasswordHash },
+    create: {
+      email: CREW_USER.email,
+      passwordHash: crewPasswordHash,
+      name: CREW_USER.name,
+      role: CREW_USER.role,
     },
   });
 

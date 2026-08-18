@@ -1,5 +1,6 @@
-import { drive_v3, google } from "googleapis";
+import { GoogleAuth, OAuth2Client } from "google-auth-library";
 
+const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const DRIVE_READONLY = "https://www.googleapis.com/auth/drive.readonly";
 
 /**
@@ -12,18 +13,9 @@ export const MIME_GOOGLE_SHEETS = "application/vnd.google-apps.spreadsheet";
 export const MIME_XLSX =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-let driveClient: drive_v3.Drive | null = null;
+let authClient: OAuth2Client | null = null;
 
-/**
- * Returns a singleton, read-only Drive v3 client built from the service account
- * JSON in `GOOGLE_SERVICE_ACCOUNT_JSON`.
- *
- * Scope is `drive.readonly` — share each target file or parent folder with the
- * service account `client_email` as Viewer. The SA only sees what you share.
- */
-export function getDriveClient(): drive_v3.Drive {
-  if (driveClient) return driveClient;
-
+function loadServiceAccountCredentials(): Record<string, unknown> {
   const credentialsJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   if (!credentialsJson?.trim()) {
     throw new Error("[google-drive] GOOGLE_SERVICE_ACCOUNT_JSON is not set");
@@ -55,13 +47,53 @@ export function getDriveClient(): drive_v3.Drive {
     );
   }
 
-  const auth = new google.auth.GoogleAuth({
+  return credentials;
+}
+
+async function getAuthClient(): Promise<OAuth2Client> {
+  if (authClient) return authClient;
+
+  const credentials = loadServiceAccountCredentials();
+  const googleAuth = new GoogleAuth({
     credentials,
     scopes: [DRIVE_READONLY],
   });
+  authClient = (await googleAuth.getClient()) as OAuth2Client;
+  return authClient;
+}
 
-  driveClient = google.drive({ version: "v3", auth });
-  return driveClient;
+async function driveRequest<T>(opts: {
+  path: string;
+  params?: Record<string, string | number | boolean | undefined>;
+  responseType?: "json" | "arraybuffer";
+}): Promise<T> {
+  const auth = await getAuthClient();
+  const res = await auth.request<T>({
+    url: `${DRIVE_API}${opts.path}`,
+    method: "GET",
+    params: opts.params,
+    responseType: opts.responseType ?? "json",
+  });
+  return res.data;
+}
+
+/**
+ * Validates Drive credentials and returns the auth client (REST, no googleapis).
+ * Share each target file or parent folder with the service account `client_email`.
+ */
+export async function getDriveClient(): Promise<OAuth2Client> {
+  return getAuthClient();
+}
+
+interface DriveFileListResponse {
+  files?: Array<{ id?: string; name?: string; mimeType?: string; size?: string }>;
+  nextPageToken?: string;
+}
+
+interface DriveFileMetaResponse {
+  id?: string;
+  name?: string;
+  mimeType?: string;
 }
 
 /**
@@ -71,9 +103,6 @@ export function getDriveClient(): drive_v3.Drive {
  *   `MIME_XLSX` since `alt=media` is not allowed for Workspace docs.
  * - Anything else (including already-`.xlsx` uploads): fetched via
  *   `files.get` with `alt=media`.
- *
- * Throws on Drive errors (auth, quota, not found, no permission, etc.).
- * Callers that want a soft-fail should wrap in try/catch and log.
  */
 export async function downloadDriveFileAsXlsxBuffer(
   fileId: string
@@ -82,27 +111,29 @@ export async function downloadDriveFileAsXlsxBuffer(
     throw new Error("[google-drive] downloadDriveFileAsXlsxBuffer: empty fileId");
   }
 
-  const drive = getDriveClient();
-
-  const meta = await drive.files.get({
-    fileId,
-    fields: "mimeType, name",
-    supportsAllDrives: true,
+  const meta = await driveRequest<DriveFileMetaResponse>({
+    path: `/files/${encodeURIComponent(fileId)}`,
+    params: {
+      fields: "mimeType, name",
+      supportsAllDrives: true,
+    },
   });
-  const mimeType = meta.data.mimeType ?? "";
+  const mimeType = meta.mimeType ?? "";
 
-  const response =
+  const payload =
     mimeType === MIME_GOOGLE_SHEETS
-      ? await drive.files.export(
-          { fileId, mimeType: MIME_XLSX },
-          { responseType: "arraybuffer" }
-        )
-      : await drive.files.get(
-          { fileId, alt: "media", supportsAllDrives: true },
-          { responseType: "arraybuffer" }
-        );
+      ? await driveRequest<ArrayBuffer>({
+          path: `/files/${encodeURIComponent(fileId)}/export`,
+          params: { mimeType: MIME_XLSX },
+          responseType: "arraybuffer",
+        })
+      : await driveRequest<ArrayBuffer>({
+          path: `/files/${encodeURIComponent(fileId)}`,
+          params: { alt: "media", supportsAllDrives: true },
+          responseType: "arraybuffer",
+        });
 
-  return Buffer.from(response.data as ArrayBuffer);
+  return Buffer.from(payload);
 }
 
 /** Marker in production workbook filenames (損益計算資料 templates). */
@@ -118,25 +149,25 @@ function driveQueryLiteral(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
-async function listDriveFilesByQuery(
-  drive: drive_v3.Drive,
-  q: string
-): Promise<DriveFileRef[]> {
+async function listDriveFilesByQuery(q: string): Promise<DriveFileRef[]> {
   const out: DriveFileRef[] = [];
   let pageToken: string | undefined;
   do {
-    const res = await drive.files.list({
-      q,
-      fields: "nextPageToken, files(id, name)",
-      pageSize: 100,
-      pageToken,
-      supportsAllDrives: true,
-      includeItemsFromAllDrives: true,
+    const res = await driveRequest<DriveFileListResponse>({
+      path: "/files",
+      params: {
+        q,
+        fields: "nextPageToken, files(id, name)",
+        pageSize: 100,
+        pageToken,
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      },
     });
-    for (const f of res.data.files ?? []) {
+    for (const f of res.files ?? []) {
       if (f.id && f.name) out.push({ id: f.id, name: f.name });
     }
-    pageToken = res.data.nextPageToken ?? undefined;
+    pageToken = res.nextPageToken;
   } while (pageToken);
   return out;
 }
@@ -144,7 +175,6 @@ async function listDriveFilesByQuery(
 /**
  * Folder ID for 損益計算資料 workbook discovery. First non-whitespace wins:
  * `GOOGLE_DRIVE_FOLDER_ID`, then `google_drive_folder_id`.
- * Share that folder with the service account `client_email` as Viewer.
  */
 export function getGoogleDriveFolderIdFromEnv(): string | undefined {
   const upper = process.env.GOOGLE_DRIVE_FOLDER_ID?.trim();
@@ -155,27 +185,19 @@ export function getGoogleDriveFolderIdFromEnv(): string | undefined {
 
 /**
  * Lists workbook files whose name contains {@link DRIVE_PL_FILENAME_MARKER}.
- *
- * **Requires** {@link getGoogleDriveFolderIdFromEnv} to be set: lists direct
- * children of that folder only. Without a folder ID, returns an empty array
- * (no Drive calls, no `sharedWithMe` fallback).
- *
- * Paginates when listing; never throws solely for “no folder”.
+ * Requires folder ID env; returns [] when unset.
  */
 export async function listSharedPlSpreadsheetFileRefs(): Promise<DriveFileRef[]> {
   const folderId = getGoogleDriveFolderIdFromEnv();
   if (!folderId) return [];
 
-  const drive = getDriveClient();
   const marker = driveQueryLiteral(DRIVE_PL_FILENAME_MARKER);
   const q = `'${driveQueryLiteral(folderId)}' in parents and trashed = false and name contains '${marker}'`;
-  return listDriveFilesByQuery(drive, q);
+  return listDriveFilesByQuery(q);
 }
 
 /**
- * Lists spreadsheet files that are direct children of `folderId`:
- * native Google Sheets and uploaded `.xlsx` (both supported by
- * {@link downloadDriveFileAsXlsxBuffer}). Results are sorted by name ascending.
+ * Lists spreadsheet files that are direct children of `folderId`.
  */
 export async function listSpreadsheetsInFolder(
   folderId: string
@@ -184,32 +206,50 @@ export async function listSpreadsheetsInFolder(
     throw new Error("[google-drive] listSpreadsheetsInFolder: empty folderId");
   }
 
-  const drive = getDriveClient();
   const parent = driveQueryLiteral(folderId.trim());
   const q = `'${parent}' in parents and trashed = false and (mimeType = '${MIME_GOOGLE_SHEETS}' or mimeType = '${MIME_XLSX}')`;
-  const refs = await listDriveFilesByQuery(drive, q);
+  const refs = await listDriveFilesByQuery(q);
   refs.sort((a, b) => a.name.localeCompare(b.name, "ja"));
   return refs;
 }
 
-/**
- * Fetch Drive file id + name (metadata only, no download).
- * Used when falling back to `Location.spreadsheetId` so sync can parse yearMonth from the filename.
- */
+/** Lists direct children of a Drive folder (metadata only). */
+export async function listFilesInFolder(
+  folderId: string,
+  opts?: { pageSize?: number }
+): Promise<Array<{ id?: string; name?: string; mimeType?: string; size?: string }>> {
+  if (!folderId?.trim()) {
+    throw new Error("[google-drive] listFilesInFolder: empty folderId");
+  }
+
+  const res = await driveRequest<DriveFileListResponse>({
+    path: "/files",
+    params: {
+      q: `'${driveQueryLiteral(folderId.trim())}' in parents and trashed = false`,
+      fields: "files(id, name, mimeType, size)",
+      pageSize: opts?.pageSize ?? 25,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+    },
+  });
+  return res.files ?? [];
+}
+
 export async function getDriveFileMeta(fileId: string): Promise<DriveFileRef> {
   if (!fileId?.trim()) {
     throw new Error("[google-drive] getDriveFileMeta: empty fileId");
   }
 
-  const drive = getDriveClient();
-  const res = await drive.files.get({
-    fileId: fileId.trim(),
-    fields: "id, name",
-    supportsAllDrives: true,
+  const res = await driveRequest<DriveFileMetaResponse>({
+    path: `/files/${encodeURIComponent(fileId.trim())}`,
+    params: {
+      fields: "id, name",
+      supportsAllDrives: true,
+    },
   });
 
-  const id = res.data.id;
-  const name = res.data.name;
+  const id = res.id;
+  const name = res.name;
   if (!id || !name) {
     throw new Error(`[google-drive] getDriveFileMeta: missing id/name for ${fileId}`);
   }
@@ -219,5 +259,5 @@ export async function getDriveFileMeta(fileId: string): Promise<DriveFileRef> {
 
 /** Test-only: clear the singleton between cases. */
 export function resetGoogleDriveClientForTests(): void {
-  driveClient = null;
+  authClient = null;
 }

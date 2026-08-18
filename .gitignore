@@ -22,6 +22,9 @@ yarn-error.log*
 
 # Testing
 /coverage
+/playwright-report/
+/test-results/
+/backend/e2e.db
 
 # Misc
 .DS_Store

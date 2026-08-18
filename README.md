@@ -67,6 +67,36 @@ npm run dev
 - **データインポート**: CSVで月次データを一括取込
 - **エクスポート**: 損益計算書をCSVでダウンロード
 
+## Testing
+
+```bash
+# Backend unit / feature tests (Vitest)
+cd backend && npm test
+
+# Frontend unit tests (Vitest)
+npm test
+
+# E2E tests (Playwright — starts backend + frontend automatically)
+npm run test:e2e
+```
+
+E2E uses seeded credentials: `admin@example.com` / `password` (MASTER) and `crew@example.com` / `password` (CREW).
+
+## CI/CD
+
+GitHub Actions runs on pull requests and pushes to `develop`, `staging`, and `production`.
+
+| Workflow | File | Trigger |
+|----------|------|---------|
+| **CI** | `.github/workflows/ci.yml` | PR / push — lint, build, unit tests, E2E (MySQL service) |
+| **CD GCP** | `.github/workflows/cd-gcp.yml` | After CI succeeds on push, or `workflow_dispatch` |
+
+**CI pipeline:** 2 checks on PR — **CI** (lint, build, unit tests) and **E2E** (Playwright). Path-aware on PRs: only the affected stack runs inside the CI job. Pushes to release branches run the full suite.
+
+**CD pipeline:** deploys to GCP Cloud Build only after the CI workflow completes successfully. On `develop`, deploy mode is inferred from changed paths (`backend` / `frontend` / `full`). `staging` and `production` always deploy full stack. Manual deploy: Actions → **CD GCP** → **Run workflow**.
+
+Setup: `bash google-cloud/scripts/setup-github-actions-cicd.sh` — see `google-cloud/cloudbuild/GITHUB_ACTIONS_WIF.md`.
+
 ## CSVインポート形式
 
 ```

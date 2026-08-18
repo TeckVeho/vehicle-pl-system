@@ -1,9 +1,9 @@
-# GCP — deploy via Cloud Build when code is merged into develop | staging | production
+# GCP — deploy via Cloud Build after CI succeeds on develop | staging | production
 #
-# Triggers only on push to those branches (merge commit = push). PRs and other branches do not deploy.
-# Path filter on push applies to develop only (backend/** and/or frontend/** → backend | frontend | full).
+# Triggers after the "CI" workflow completes successfully on push to those branches.
+# PRs do not deploy. workflow_dispatch: manual deploy (bypasses CI gate).
+# Path filter on develop only (backend/** and/or frontend/** → backend | frontend | full).
 # staging and production always run a full deploy on every push (release branches; migrations must not be skipped).
-# workflow_dispatch: manual deploy (optional); same branch must be develop | staging | production.
 #
 # GitHub repo: TeckVeho/vehicle-pl-system (WIF attribute-condition must match)
 #
@@ -21,11 +21,13 @@
 name: CD GCP
 
 concurrency:
-  group: cd-gcp-${{ github.ref_name }}
+  group: cd-gcp-${{ github.event.workflow_run.head_branch || github.ref_name }}
   cancel-in-progress: false
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches:
       - develop
       - staging
@@ -46,36 +48,45 @@ permissions:
   id-token: write
 
 jobs:
-  resolve-mode:
+  workflow-context:
+    name: Resolve deploy context
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/production'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    outputs:
+      ref_name: ${{ steps.ctx.outputs.ref_name }}
+      sha: ${{ steps.ctx.outputs.sha }}
+    steps:
+      - id: ctx
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "ref_name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            echo "sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref_name=${{ github.event.workflow_run.head_branch }}" >> "$GITHUB_OUTPUT"
+            echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+  resolve-mode:
+    needs: workflow-context
+    runs-on: ubuntu-latest
+    if: >-
+      contains(fromJSON('["develop","staging","production"]'), needs.workflow-context.outputs.ref_name)
     outputs:
       build_mode: ${{ steps.resolve.outputs.build_mode }}
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ needs.workflow-context.outputs.sha }}
           fetch-depth: 0
 
-      - uses: dorny/paths-filter@v4
-        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
-        id: filter
-        with:
-          filters: |
-            backend:
-              - 'backend/**'
-            frontend:
-              - 'src/**'
-              - 'public/**'
-              - 'Dockerfile.prod'
-              - 'next.config.mjs'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'tailwind.config.ts'
-              - 'postcss.config.mjs'
-              - 'components.json'
-              - 'tsconfig.json'
-
       - id: resolve
+        env:
+          REF_NAME: ${{ needs.workflow-context.outputs.ref_name }}
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -83,12 +94,22 @@ jobs:
             exit 0
           fi
           # Release branches: always deploy so DB migrations and app images stay in sync with git.
-          if [ "${{ github.ref_name }}" = "staging" ] || [ "${{ github.ref_name }}" = "production" ]; then
+          if [ "${REF_NAME}" = "staging" ] || [ "${REF_NAME}" = "production" ]; then
             echo "build_mode=full" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          BE="${{ steps.filter.outputs.backend }}"
-          FE="${{ steps.filter.outputs.frontend }}"
+          # develop: diff this push commit against its parent (workflow_run has no push.before).
+          git fetch origin "${REF_NAME}" --depth=50
+          PARENT="$(git rev-parse HEAD^)"
+          BE=false
+          FE=false
+          while IFS= read -r file; do
+            [ -z "${file}" ] && continue
+            case "${file}" in
+              backend/*) BE=true ;;
+              src/*|public/*|Dockerfile.prod|next.config.mjs|package.json|package-lock.json|tailwind.config.ts|postcss.config.mjs|components.json|tsconfig.json) FE=true ;;
+            esac
+          done < <(git diff --name-only "${PARENT}" HEAD)
           if [ "${BE}" = "true" ] && [ "${FE}" = "true" ]; then
             echo "build_mode=full" >> "$GITHUB_OUTPUT"
           elif [ "${BE}" = "true" ]; then
@@ -100,17 +121,19 @@ jobs:
           fi
 
   cloud-build:
-    needs: resolve-mode
+    needs: [workflow-context, resolve-mode]
     if: needs.resolve-mode.outputs.build_mode != 'skip'
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.workflow-context.outputs.sha }}
 
       - name: Resolve Cloud Build config
         id: cfg
         env:
-          ENV_NAME: ${{ github.ref_name }}
+          ENV_NAME: ${{ needs.workflow-context.outputs.ref_name }}
           MODE: ${{ needs.resolve-mode.outputs.build_mode }}
         run: |
           set -euo pipefail
@@ -208,7 +231,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${{ steps.cfg.outputs.api_url }}" ] || [ -z "${{ steps.cfg.outputs.base_url }}" ]; then
-            echo "build_mode '${{ needs.resolve-mode.outputs.build_mode }}' requires GCP_NEXT_PUBLIC_* repository Variables for branch '${{ github.ref_name }}'."
+            echo "build_mode '${{ needs.resolve-mode.outputs.build_mode }}' requires GCP_NEXT_PUBLIC_* repository Variables for branch '${{ needs.workflow-context.outputs.ref_name }}'."
             exit 1
           fi
 

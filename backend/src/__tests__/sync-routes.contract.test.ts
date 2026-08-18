@@ -1,66 +1,9 @@
-import jwt from "jsonwebtoken";
+import "./helpers/setup-prisma-mock.js";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret-change-in-production";
-
-function signToken(role: string, userId: string) {
-  return jwt.sign(
-    { userId, email: `${userId}@test.local`, role },
-    JWT_SECRET,
-    { expiresIn: "7d" }
-  );
-}
-
-const { prismaMock } = vi.hoisted(() => ({
-  prismaMock: {
-    user: { findUnique: vi.fn() },
-    location: { findMany: vi.fn(), findUnique: vi.fn() },
-    vehicle: {
-      findFirst: vi.fn(),
-      findUnique: vi.fn(),
-      upsert: vi.fn(),
-      update: vi.fn(),
-    },
-    course: {
-      findFirst: vi.fn(),
-      findUnique: vi.fn(),
-      findMany: vi.fn().mockResolvedValue([]),
-      create: vi.fn(),
-      update: vi.fn(),
-      aggregate: vi.fn(),
-    },
-    driver: {
-      findFirst: vi.fn(),
-      findUnique: vi.fn(),
-      create: vi.fn(),
-      update: vi.fn(),
-    },
-    accountItem: { findMany: vi.fn() },
-    driverMonthlyAmount: { upsert: vi.fn() },
-    dailyDriverAssignment: {
-      findMany: vi.fn(),
-      deleteMany: vi.fn(),
-      createMany: vi.fn(),
-      upsert: vi.fn(),
-    },
-    dailyAtmtcRun: {
-      deleteMany: vi.fn(),
-      create: vi.fn(),
-      upsert: vi.fn(),
-    },
-    dailyOperatingRecord: { upsert: vi.fn() },
-    vehicleMonthlyCost: { findUnique: vi.fn(), upsert: vi.fn() },
-    locationMonthlyExpense: { findMany: vi.fn() },
-    monthlyRecord: { findUnique: vi.fn(), upsert: vi.fn() },
-    dataSyncLog: { create: vi.fn() },
-    $executeRawUnsafe: vi.fn(),
-  },
-}));
-
-vi.mock("../lib/prisma.js", () => ({
-  prisma: prismaMock,
-}));
+import { getTestApp } from "./helpers/app.js";
+import { masterToken, mockUser, signToken } from "./helpers/auth.js";
+import { prismaMock } from "./helpers/setup-prisma-mock.js";
 
 // Mock allocation modules called by routes after sync
 vi.mock("../lib/driver-allocation.js", () => ({
@@ -76,23 +19,13 @@ vi.mock("../lib/course-allocation-trigger.js", () => ({
   runCourseAllocationScope: vi.fn().mockResolvedValue([]),
 }));
 
-import { createApp } from "../app.js";
 
-const app = createApp();
-
-function masterToken() {
-  return signToken("DX", "u1");
-}
+const app = getTestApp();
 
 describe("sync route contracts", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    prismaMock.user.findUnique.mockResolvedValue({
-      id: "u1",
-      email: "u1@test.local",
-      name: "Test",
-      role: "DX",
-    });
+    prismaMock.user.findUnique.mockResolvedValue(mockUser("DX", "u1"));
     prismaMock.location.findMany.mockResolvedValue([]);
     prismaMock.location.findUnique.mockResolvedValue(null);
     prismaMock.dataSyncLog.create.mockResolvedValue({} as never);
