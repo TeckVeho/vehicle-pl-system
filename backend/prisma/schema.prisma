@@ -8,7 +8,7 @@ datasource db {
 }
 
 // 権限設定（外部システム同期用）
-// 有効な role: CREW, 事務員, TL, 事業部, 人事労務, 総務広報, 経理財務, 品質管理, 営業, 現場MG, 本社MG, 部長, 執行役員, 取締役, DX, DX管理者
+// 有効な role: CREW, 事務員, 点呼員, TL, 事業部, 人事労務, 総務広報, 経理財務, 品質管理, 営業, 現場MG, 本社MG, 部長, 執行役員, 取締役, DX, DX管理者
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
