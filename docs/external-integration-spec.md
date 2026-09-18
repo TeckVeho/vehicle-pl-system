@@ -168,7 +168,7 @@ JWT は `POST /api/auth/login` で取得。有効期限は 7 日間。
 | role | ○ | 権限（VALID_ROLES 参照） |
 | password | - | 未指定時は "changeme" |
 
-**有効な role**: CREW, 事務員, TL, 事業部, 人事労務, 総務広報, 経理財務, 品質管理, 営業, 現場MG, 本社MG, 部長, 執行役員, 取締役, DX, DX管理者
+**有効な role**: CREW, 事務員, 点呼員, TL, 事業部, 人事労務, 総務広報, 経理財務, 品質管理, 営業, 現場MG, 本社MG, 部長, 執行役員, 取締役, DX, DX管理者
 
 ---
 
