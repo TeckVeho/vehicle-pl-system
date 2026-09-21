@@ -26,7 +26,7 @@
  * **Drive file:** Names contain `損益計算資料`. Folder ID (`GOOGLE_DRIVE_FOLDER_ID` or `google_drive_folder_id`) is required for auto-discovery (direct children); no folder → no Drive list fallback. Sync always tries folder auto-resolve (marker + **`Location.name`** + **`yearMonth`**) first; `Location.spreadsheetId` is fallback only. DB `yearMonth` is parsed from the Drive **filename**, not the sync request, and must match the requested month.
  */
 
-import readXlsxFile, { readSheetNames } from "read-excel-file/node";
+import readXlsxFile, { readSheet } from "read-excel-file/node";
 import { prisma } from "./prisma.js";
 import { accountItemEffectiveWhere } from "./account-item-filter.js";
 import { REVENUE_CATEGORY } from "./calc.js";
@@ -994,7 +994,8 @@ async function downloadAndParseRevenueMapFromDrive(
     });
 
     const buffer = await downloadDriveFileAsXlsxBuffer(spreadsheetId);
-    const sheetNames = await readSheetNames(buffer);
+    const workbookSheets = await readXlsxFile(buffer);
+    const sheetNames = workbookSheets.map((sheet) => sheet.sheet);
     const sheetName = pickRevenueWorkbookSheetName(
       sheetNames,
       yearMonth,
@@ -1032,9 +1033,7 @@ async function downloadAndParseRevenueMapFromDrive(
       tabCount: sheetNames.length,
     });
 
-    const rows = (await readXlsxFile(buffer, {
-      sheet: sheetName,
-    })) as unknown[][];
+    const rows = await readSheet(buffer, sheetName);
 
     if (!rows.length) {
       void logSpreadsheetRevenue("warn", "selected sheet has zero rows", {

@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import type { Prisma } from "../generated/prisma/client.js";
 
 /**
  * 指定年月に有効な勘定科目のPrisma where条件を返す
