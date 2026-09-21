@@ -1,6 +1,16 @@
-const { PrismaClient } = require("@prisma/client");
+require("dotenv/config");
+const { PrismaMariaDb } = require("@prisma/adapter-mariadb");
 const bcrypt = require("bcrypt");
-const prisma = new PrismaClient();
+
+async function createSeedPrisma() {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is not set");
+  }
+  const { PrismaClient } = await import("../src/generated/prisma/client.js");
+  const adapter = new PrismaMariaDb(databaseUrl);
+  return new PrismaClient({ adapter });
+}
 
 const ADMIN_USER = {
   email: "admin@example.com",
@@ -103,6 +113,7 @@ const LOCATIONS = [
 ];
 
 async function main() {
+  const prisma = await createSeedPrisma();
   console.log("Seeding database...");
 
   const adminPasswordHash = await bcrypt.hash(ADMIN_USER.password, 10);
@@ -256,13 +267,11 @@ async function main() {
   }
 
   console.log("Seed completed.");
+  await prisma.$disconnect();
 }
 
 main()
   .catch((e) => {
     console.error(e);
     process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
   });

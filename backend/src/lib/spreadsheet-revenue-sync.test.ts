@@ -34,7 +34,7 @@ vi.mock("./google-drive-client.js", () => ({
 
 vi.mock("read-excel-file/node", () => ({
   default: vi.fn(),
-  readSheetNames: vi.fn(),
+  readSheet: vi.fn(),
 }));
 
 vi.mock("./course-allocation-trigger.js", () => ({
@@ -45,7 +45,7 @@ vi.mock("./prisma.js", () => ({
   prisma: prismaMock,
 }));
 
-import readXlsxFile, { readSheetNames } from "read-excel-file/node";
+import readXlsxFile, { readSheet } from "read-excel-file/node";
 import {
   downloadDriveFileAsXlsxBuffer,
   getDriveFileMeta,
@@ -114,8 +114,10 @@ describe("syncSpreadsheetRevenueForLocationYear", () => {
       { id: "acc-1", name: "山崎製パン" },
     ]);
     vi.mocked(downloadDriveFileAsXlsxBuffer).mockResolvedValue(Buffer.from([1]));
-    vi.mocked(readSheetNames).mockResolvedValueOnce(["2026-02"]);
-    vi.mocked(readXlsxFile).mockResolvedValueOnce([
+    vi.mocked(readXlsxFile).mockResolvedValueOnce(
+      ["2026-02"].map((sheet) => ({ sheet, data: [] }))
+    );
+    vi.mocked(readSheet).mockResolvedValueOnce([
       ["vehicleNo", "山崎製パン"],
       ["017-001", 5_136_000],
     ]);
@@ -152,14 +154,16 @@ describe("syncSpreadsheetRevenueForLocationYear", () => {
     ]);
 
     vi.mocked(downloadDriveFileAsXlsxBuffer).mockResolvedValue(Buffer.from([1]));
-    vi.mocked(readSheetNames).mockResolvedValue(["2026-03"]);
-    vi.mocked(readXlsxFile).mockResolvedValueOnce([
+    vi.mocked(readXlsxFile).mockResolvedValue(
+      ["2026-03"].map((sheet) => ({ sheet, data: [] }))
+    );
+    vi.mocked(readSheet).mockResolvedValueOnce([
       ["vehicleNo", "売上A"],
       ["V-1", 100],
     ]);
 
     await syncSpreadsheetRevenueForLocationYear("loc-a", "2026-03");
-    vi.mocked(readXlsxFile).mockResolvedValueOnce([
+    vi.mocked(readSheet).mockResolvedValueOnce([
       ["vehicleNo", "売上A"],
       ["V-1", 200],
     ]);
@@ -191,8 +195,10 @@ describe("syncSpreadsheetRevenueForLocationYear", () => {
     ]);
 
     vi.mocked(downloadDriveFileAsXlsxBuffer).mockResolvedValue(Buffer.from([1]));
-    vi.mocked(readSheetNames).mockResolvedValueOnce(["2026-03"]);
-    vi.mocked(readXlsxFile).mockResolvedValueOnce([
+    vi.mocked(readXlsxFile).mockResolvedValueOnce(
+      ["2026-03"].map((sheet) => ({ sheet, data: [] }))
+    );
+    vi.mocked(readSheet).mockResolvedValueOnce([
       ["vehicleNo", "売上A"],
       ["V-1", 42],
     ]);

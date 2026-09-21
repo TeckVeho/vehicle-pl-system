@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { downloadMock, readXlsxMock, readSheetNamesMock, listPlFilesMock, getDriveFileMetaMock, prismaMock } = vi.hoisted(
+const { downloadMock, readXlsxMock, readSheetMock, listPlFilesMock, getDriveFileMetaMock, prismaMock } = vi.hoisted(
   () => ({
     downloadMock: vi.fn(),
     readXlsxMock: vi.fn(),
-    readSheetNamesMock: vi.fn(),
+    readSheetMock: vi.fn(),
     listPlFilesMock: vi.fn(),
     getDriveFileMetaMock: vi.fn(),
     prismaMock: {
@@ -26,7 +26,7 @@ vi.mock("./google-drive-client.js", () => ({
 
 vi.mock("read-excel-file/node", () => ({
   default: readXlsxMock,
-  readSheetNames: readSheetNamesMock,
+  readSheet: readSheetMock,
 }));
 
 vi.mock("./prisma.js", () => ({
@@ -158,8 +158,8 @@ describe("getRevenueFromSpreadsheets", () => {
       { id: "a1", name: "山崎製パン" },
     ]);
     downloadMock.mockResolvedValue(Buffer.from([1]));
-    readSheetNamesMock.mockResolvedValueOnce(["2026-03"]);
-    readXlsxMock.mockResolvedValueOnce([
+    readXlsxMock.mockResolvedValueOnce(["2026-03"].map((sheet) => ({ sheet, data: [] })));
+    readSheetMock.mockResolvedValueOnce([
       ["vehicleNo", "山崎製パン"],
       ["017-001", 999],
     ]);
@@ -221,7 +221,7 @@ describe("getRevenueFromSpreadsheets", () => {
       { id: "a1", name: "山崎製パン" },
     ]);
     downloadMock.mockResolvedValue(Buffer.from([1]));
-    readSheetNamesMock.mockResolvedValueOnce(["2026-01"]);
+    readXlsxMock.mockResolvedValueOnce(["2026-01"].map((sheet) => ({ sheet, data: [] })));
 
     const map = await getRevenueFromSpreadsheets(baseParams);
 
@@ -253,8 +253,8 @@ describe("getRevenueFromSpreadsheets", () => {
       { id: "a2", name: "ヤマザキ物流" },
     ]);
     downloadMock.mockResolvedValue(Buffer.from([1]));
-    readSheetNamesMock.mockResolvedValueOnce(["2026-03"]);
-    readXlsxMock.mockResolvedValueOnce([
+    readXlsxMock.mockResolvedValueOnce(["2026-03"].map((sheet) => ({ sheet, data: [] })));
+    readSheetMock.mockResolvedValueOnce([
       ["vehicleNo", "山崎製パン", "ヤマザキ物流"],
       ["001-001", 1000, 200],
       ["002-002", 50, 300],
@@ -281,8 +281,8 @@ describe("getRevenueFromSpreadsheets", () => {
       { id: "a1", name: "山崎製パン" },
     ]);
     downloadMock.mockResolvedValue(Buffer.from([1]));
-    readSheetNamesMock.mockResolvedValueOnce(["2026-03"]);
-    readXlsxMock.mockResolvedValueOnce([
+    readXlsxMock.mockResolvedValueOnce(["2026-03"].map((sheet) => ({ sheet, data: [] })));
+    readSheetMock.mockResolvedValueOnce([
       ["vehicleNo", "山崎製パン"],
       ["001-001", "1,500,000"],
     ]);
@@ -305,8 +305,8 @@ describe("getRevenueFromSpreadsheets", () => {
       { id: "a1", name: "山崎製パン" },
     ]);
     downloadMock.mockResolvedValue(Buffer.from([1]));
-    readSheetNamesMock.mockResolvedValueOnce(["2026-03"]);
-    readXlsxMock.mockResolvedValueOnce([
+    readXlsxMock.mockResolvedValueOnce(["2026-03"].map((sheet) => ({ sheet, data: [] })));
+    readSheetMock.mockResolvedValueOnce([
       ["vehicleNo", "山崎製パン"],
       ["unknown-no", "500"],
       ["001-001", 42],
@@ -345,8 +345,8 @@ describe("getRevenueFromSpreadsheets", () => {
       { id: "a1", name: "山崎製パン" },
     ]);
     downloadMock.mockResolvedValue(Buffer.from([1]));
-    readSheetNamesMock.mockResolvedValueOnce(["2026.02"]);
-    readXlsxMock.mockResolvedValueOnce([
+    readXlsxMock.mockResolvedValueOnce(["2026.02"].map((sheet) => ({ sheet, data: [] })));
+    readSheetMock.mockResolvedValueOnce([
       ["vehicleNo", "山崎製パン"],
       ["18-16", 777],
     ]);
@@ -379,8 +379,8 @@ describe("getRevenueFromSpreadsheets", () => {
       { id: "a1", name: "山崎製パン" },
     ]);
     downloadMock.mockResolvedValue(Buffer.from([1]));
-    readSheetNamesMock.mockResolvedValueOnce(["車両別損益"]);
-    readXlsxMock.mockResolvedValueOnce([
+    readXlsxMock.mockResolvedValueOnce(["車両別損益"].map((sheet) => ({ sheet, data: [] })));
+    readSheetMock.mockResolvedValueOnce([
       ["名古屋営業所"],
       ["業態コース", 1816, null],
       ["車両No", 9654, "（％）"],
@@ -415,8 +415,8 @@ describe("getRevenueFromSpreadsheets", () => {
       { id: "a1", name: "山崎製パン" },
     ]);
     downloadMock.mockResolvedValue(Buffer.from([1]));
-    readSheetNamesMock.mockResolvedValueOnce(["車両別損益"]);
-    readXlsxMock.mockResolvedValueOnce([
+    readXlsxMock.mockResolvedValueOnce(["車両別損益"].map((sheet) => ({ sheet, data: [] })));
+    readSheetMock.mockResolvedValueOnce([
       ["名古屋営業所"],
       ["業態コース", "18-34", null],
       ["車両No", 7710, "（％）"],
@@ -451,8 +451,8 @@ describe("getRevenueFromSpreadsheets", () => {
       { id: "aSan", name: "サンロジスティックス" },
     ]);
     downloadMock.mockResolvedValue(Buffer.from([1]));
-    readSheetNamesMock.mockResolvedValueOnce(["車両別損益"]);
-    readXlsxMock.mockResolvedValueOnce([
+    readXlsxMock.mockResolvedValueOnce(["車両別損益"].map((sheet) => ({ sheet, data: [] })));
+    readSheetMock.mockResolvedValueOnce([
       ["x"],
       ["業態", "18-10", null],
       ["車両No", 9654, "（％）"],
@@ -488,8 +488,8 @@ describe("getRevenueFromSpreadsheets", () => {
       { id: "aEco", name: "富士エコー" },
     ]);
     downloadMock.mockResolvedValue(Buffer.from([1]));
-    readSheetNamesMock.mockResolvedValueOnce(["売上明細"]);
-    readXlsxMock.mockResolvedValueOnce([
+    readXlsxMock.mockResolvedValueOnce(["売上明細"].map((sheet) => ({ sheet, data: [] })));
+    readSheetMock.mockResolvedValueOnce([
       [],
       [],
       [],
@@ -542,8 +542,8 @@ describe("getRevenueFromSpreadsheets", () => {
       { id: "aYama", name: "山崎製パン" },
     ]);
     downloadMock.mockResolvedValue(Buffer.from([1]));
-    readSheetNamesMock.mockResolvedValueOnce(["売上明細", "損益計算書"]);
-    readXlsxMock.mockResolvedValueOnce([
+    readXlsxMock.mockResolvedValueOnce(["売上明細", "損益計算書"].map((sheet) => ({ sheet, data: [] })));
+    readSheetMock.mockResolvedValueOnce([
       [],
       [],
       [],
@@ -598,8 +598,8 @@ describe("getRevenueFromSpreadsheets", () => {
       { id: "aYama", name: "山崎製パン" },
     ]);
     downloadMock.mockResolvedValue(Buffer.from([1]));
-    readSheetNamesMock.mockResolvedValueOnce(["車両別損益", "売上明細"]);
-    readXlsxMock.mockResolvedValueOnce([
+    readXlsxMock.mockResolvedValueOnce(["車両別損益", "売上明細"].map((sheet) => ({ sheet, data: [] })));
+    readSheetMock.mockResolvedValueOnce([
       [],
       [],
       [],
