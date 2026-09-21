@@ -1,15 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { googleAuthCtorMock, authRequestMock } = vi.hoisted(() => {
+const { googleAuthCtorMock, authRequestMock, MockGoogleAuth } = vi.hoisted(() => {
   const authRequestMock = vi.fn();
-  const googleAuthCtorMock = vi.fn(() => ({
-    getClient: vi.fn(async () => ({ request: authRequestMock })),
-  }));
-  return { googleAuthCtorMock, authRequestMock };
+  const googleAuthCtorMock = vi.fn();
+
+  class MockGoogleAuth {
+    constructor(...args: unknown[]) {
+      googleAuthCtorMock(...args);
+    }
+
+    getClient = vi.fn(async () => ({ request: authRequestMock }));
+  }
+
+  return { googleAuthCtorMock, authRequestMock, MockGoogleAuth };
 });
 
 vi.mock("google-auth-library", () => ({
-  GoogleAuth: googleAuthCtorMock,
+  GoogleAuth: MockGoogleAuth,
   OAuth2Client: class OAuth2Client {},
 }));
 
