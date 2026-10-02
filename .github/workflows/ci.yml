@@ -50,6 +50,9 @@ jobs:
       - name: Backend — build & test
         if: steps.filter.outputs.backend == 'true' || github.event_name != 'pull_request'
         working-directory: backend
+        env:
+          # prisma.config.ts resolves DATABASE_URL at generate time (no DB needed for CI)
+          DATABASE_URL: mysql://ci:ci@127.0.0.1:3306/ci
         run: |
           npm ci
           npx prisma generate
