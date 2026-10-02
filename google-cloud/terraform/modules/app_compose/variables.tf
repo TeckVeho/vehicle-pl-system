@@ -219,7 +219,11 @@ variable "web_secret_env_from_sm" {
   description = "Same as api_secret_env_from_sm for the web Cloud Run service when enable_web = true."
 }
 
-# --- Optional: project IAM (custom roles + manual bindings) ---
+variable "app_secrets_bundle_secret_id" {
+  type        = string
+  default     = ""
+  description = "Bundled app secrets .env secret id (JWT, Google Drive, …). See google-cloud/scripts/create-app-secrets-bundle.sh."
+}
 
 variable "enable_env_iam_custom_roles" {
   type        = bool

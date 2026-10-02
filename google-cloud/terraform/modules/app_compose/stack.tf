@@ -53,6 +53,7 @@ module "secrets" {
   source = "../secrets"
 
   api_secret_env_from_sm    = var.api_secret_env_from_sm
+  app_secrets_bundle_secret_id = var.app_secrets_bundle_secret_id
   project_id                = var.project_id
   web_secret_env_from_sm    = var.web_secret_env_from_sm
   cloud_run_service_account = local.cloud_run_service_account
@@ -101,6 +102,7 @@ module "cloud_run" {
   allow_unauthenticated_web             = var.allow_unauthenticated_web
   api_custom_domain                     = var.api_custom_domain
   api_secret_env_from_sm                = var.api_secret_env_from_sm
+  app_secrets_bundle_secret_id          = var.app_secrets_bundle_secret_id
   cloud_run_migrate_job_name            = var.cloud_run_migrate_job_name
   cloud_run_service_name                = local.cloud_run_service_name_effective
   cloud_run_ingress                     = var.cloud_run_ingress

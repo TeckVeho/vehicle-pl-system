@@ -64,8 +64,7 @@ allow_unauthenticated_web = true
 
 enable_env_iam_custom_roles = true
 
-api_secret_env_from_sm = [
-  { env_name = "JWT_SECRET", secret_id = "izumi-vpl-jwt-secret-dev", version = "latest" },
-  { env_name = "GOOGLE_SERVICE_ACCOUNT_JSON", secret_id = "izumi-vpl-google-sa-json-dev", version = "latest" },
-  { env_name = "GOOGLE_DRIVE_FOLDER_ID", secret_id = "izumi-vpl-google-drive-folder-dev", version = "latest" },
-]
+# Bundled app secrets (.env in Secret Manager). Create via:
+#   bash google-cloud/scripts/migrate-app-secrets-to-bundle.sh dev
+app_secrets_bundle_secret_id = "izumi-vpl-app-secrets-dev"
+api_secret_env_from_sm = []
