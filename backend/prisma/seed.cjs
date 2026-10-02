@@ -7,7 +7,7 @@ async function createSeedPrisma() {
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is not set");
   }
-  const { PrismaClient } = await import("../src/generated/prisma/client.js");
+  const { PrismaClient } = await import("../src/generated/prisma/client.ts");
   const adapter = new PrismaMariaDb(databaseUrl);
   return new PrismaClient({ adapter });
 }
