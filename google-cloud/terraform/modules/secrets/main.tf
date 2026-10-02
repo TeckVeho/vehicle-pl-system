@@ -1,10 +1,11 @@
 # Grant Cloud Run runtime SA access to secrets referenced by api_secret_env_from_sm / web_secret_env_from_sm.
 
 locals {
-  distinct_sm_secret_ids_for_runtime = distinct(concat(
+  distinct_sm_secret_ids_for_runtime = distinct(compact(concat(
     [for s in var.api_secret_env_from_sm : s.secret_id],
     [for s in var.web_secret_env_from_sm : s.secret_id],
-  ))
+    trimspace(var.app_secrets_bundle_secret_id) != "" ? [var.app_secrets_bundle_secret_id] : [],
+  )))
 }
 
 resource "google_secret_manager_secret_iam_member" "cloudrun_secret_accessor" {

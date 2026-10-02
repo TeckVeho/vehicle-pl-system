@@ -77,15 +77,15 @@ Creates: Cloud Run API/Web/Migrate, Cloud SQL MySQL, Secret Manager bindings.
 export GOOGLE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
 export GOOGLE_DRIVE_FOLDER_ID='your-folder-id'
 
-bash google-cloud/scripts/create-dev-secrets.sh
+bash google-cloud/scripts/migrate-app-secrets-to-bundle.sh dev
 ```
 
-| Secret ID | Env var |
+| Secret ID | Purpose |
 |-----------|---------|
-| `izumi-vpl-database-url-dev` | `DATABASE_URL` (auto-created by Terraform) |
-| `izumi-vpl-jwt-secret-dev` | `JWT_SECRET` |
-| `izumi-vpl-google-sa-json-dev` | `GOOGLE_SERVICE_ACCOUNT_JSON` |
-| `izumi-vpl-google-drive-folder-dev` | `GOOGLE_DRIVE_FOLDER_ID` |
+| `izumi-vpl-database-url-{env}` | `DATABASE_URL` (Terraform + `secret_key_ref` on Cloud Run) |
+| `izumi-vpl-app-secrets-{env}` | Bundled `.env`: `JWT_SECRET`, `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_DRIVE_FOLDER_ID` (volume mount + `APP_SECRETS_FILE`) |
+
+After smoke test: `bash google-cloud/scripts/cleanup-legacy-app-secrets.sh dev`
 
 ---
 

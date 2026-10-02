@@ -204,7 +204,11 @@ resource "google_secret_manager_secret" "database_url" {
   secret_id = local.database_url_secret_id
 
   replication {
-    auto {}
+    user_managed {
+      replicas {
+        location = var.region
+      }
+    }
   }
 
   depends_on = [google_project_service.secretmanager]

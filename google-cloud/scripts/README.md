@@ -4,7 +4,10 @@
 |--------|---------|
 | `load-env.sh` | Export `GCP_PROJECT_ID`, `GCP_REGION`, `GCP_STATE_BUCKET` |
 | `cloud-build-submit.sh` | Submit Cloud Build from repo root |
-| `create-dev-secrets.sh` | Create JWT + Google Drive secrets in Secret Manager |
+| `create-dev-secrets.sh` | Legacy: per-key dev secrets (prefer `migrate-app-secrets-to-bundle.sh`) |
+| `create-app-secrets-bundle.sh` | Create/update bundled app secrets `.env` in Secret Manager |
+| `migrate-app-secrets-to-bundle.sh` | Copy legacy JWT/SA/Drive secrets into bundle |
+| `cleanup-legacy-app-secrets.sh` | Delete legacy per-key secrets after smoke test |
 | `run-migrate-job.sh` | Execute Prisma migrate Cloud Run Job |
 | `import-vehicle-pl-db-dev.sh` | Import SQL dump into Cloud SQL dev (hub or legacy instance) |
 | `export-vpl-sql-dumps.sh` | Export dev/stg/prod Cloud SQL dumps before migration (issue #99) |

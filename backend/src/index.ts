@@ -1,5 +1,8 @@
+import { loadAppSecrets } from "./config/loadAppSecrets.js";
 import { createApp } from "./app.js";
 import { startSpreadsheetRevenueScheduler } from "./lib/scheduler.js";
+
+loadAppSecrets();
 
 const app = createApp();
 const PORT = process.env.PORT ?? 4000;

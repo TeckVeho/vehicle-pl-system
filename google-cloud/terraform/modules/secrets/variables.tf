@@ -28,3 +28,9 @@ variable "web_secret_env_from_sm" {
   default     = []
   description = "Same as api_secret_env_from_sm for the web Cloud Run service when enable_web = true."
 }
+
+variable "app_secrets_bundle_secret_id" {
+  type        = string
+  default     = ""
+  description = "Bundled app secrets .env secret id (see google-cloud/scripts/create-app-secrets-bundle.sh)."
+}

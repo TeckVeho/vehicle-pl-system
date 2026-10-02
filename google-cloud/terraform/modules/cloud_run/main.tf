@@ -38,6 +38,8 @@ locals {
   )
 
   web_container_env = merge(var.web_env_vars, local.public_url_env_web)
+
+  use_app_secrets_bundle = trimspace(var.app_secrets_bundle_secret_id) != ""
 }
 
 # APIs required for Artifact Registry + Cloud Run
@@ -94,6 +96,20 @@ resource "google_cloud_run_v2_service" "api" {
       }
     }
 
+    dynamic "volumes" {
+      for_each = local.use_app_secrets_bundle ? [1] : []
+      content {
+        name = "app-secrets"
+        secret {
+          secret = var.app_secrets_bundle_secret_id
+          items {
+            path    = "app.env"
+            version = "latest"
+          }
+        }
+      }
+    }
+
     containers {
       image = var.container_image
 
@@ -117,8 +133,24 @@ resource "google_cloud_run_v2_service" "api" {
         }
       }
 
+      dynamic "volume_mounts" {
+        for_each = local.use_app_secrets_bundle ? [1] : []
+        content {
+          name       = "app-secrets"
+          mount_path = "/secrets"
+        }
+      }
+
       dynamic "env" {
         for_each = local.api_container_env
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
+      dynamic "env" {
+        for_each = local.use_app_secrets_bundle ? { APP_SECRETS_FILE = "/secrets/app.env" } : {}
         content {
           name  = env.key
           value = env.value
