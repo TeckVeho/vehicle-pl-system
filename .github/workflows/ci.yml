@@ -11,6 +11,7 @@ on:
       - develop
       - staging
       - production
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -25,6 +26,10 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
 
       - uses: dorny/paths-filter@v3
         id: filter
@@ -44,6 +49,7 @@ jobs:
               - 'next.config.mjs'
               - 'tailwind.config.ts'
               - 'postcss.config.mjs'
+              - 'eslint.config.mjs'
               - 'tsconfig.json'
               - '.github/workflows/ci.yml'
 
@@ -72,7 +78,7 @@ jobs:
     needs: ci
     if: |
       needs.ci.result == 'success' &&
-      (needs.ci.outputs.backend == 'true' || needs.ci.outputs.frontend == 'true' || github.event_name == 'push')
+      (needs.ci.outputs.backend == 'true' || needs.ci.outputs.frontend == 'true' || github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -91,7 +97,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
       - run: npm ci
       - run: npm ci

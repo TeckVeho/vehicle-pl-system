@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { routeParam } from "../lib/route-param.js";
 import bcrypt from "bcrypt";
 import { prisma } from "../lib/prisma.js";
 
@@ -67,7 +68,7 @@ usersRouter.get("/", async (_req: Request, res: Response) => {
 // 1件取得（externalId または id で検索）
 usersRouter.get("/:idOrExternalId", async (req: Request, res: Response) => {
   try {
-    const { idOrExternalId } = req.params;
+    const idOrExternalId = routeParam(req.params.idOrExternalId);
     const user = await prisma.user.findFirst({
       where: {
         OR: [{ id: idOrExternalId }, { externalId: idOrExternalId }],
@@ -274,7 +275,7 @@ usersRouter.post("/sync", async (req: Request, res: Response) => {
 // 更新
 usersRouter.put("/:id", async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = routeParam(req.params.id);
     const { email, name, role, externalId, password } = req.body;
 
     const updateData: Record<string, unknown> = {};
@@ -319,7 +320,7 @@ usersRouter.put("/:id", async (req: Request, res: Response) => {
 // 削除
 usersRouter.delete("/:id", async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = routeParam(req.params.id);
     await prisma.user.delete({
       where: { id },
     });
