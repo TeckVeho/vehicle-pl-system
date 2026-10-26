@@ -5,13 +5,11 @@
  *
  * UI: 損益計算書 → 拠点「本社」→ 対象月（デフォルト当月）→ 表示「コース」
  */
-import { PrismaClient } from "@prisma/client";
 import { syncDailyOperatingRecordsFromRows } from "../src/lib/daily-operating-records-sync.js";
 import { runCourseAllocationScope } from "../src/lib/course-allocation-trigger.js";
 import { runDriverAllocation } from "../src/lib/driver-allocation.js";
 import { runSalaryRunCountAllocation } from "../src/lib/salary-run-count-allocation.js";
-
-const prisma = new PrismaClient();
+import { prisma } from "../src/lib/prisma.js";
 
 const LOCATION_CODE = "LOC001";
 const DEMO_DRIVERS = [

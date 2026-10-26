@@ -23,13 +23,13 @@ Shared bootstrap (one per project): state bucket, Artifact Registry, Cloud Build
 
 Per env Terraform stacks: `live/{dev,stg,prod}/network` → `live/{dev,stg,prod}/app`.
 
-Secrets pattern: `izumi-vpl-jwt-secret-{env_suffix}` (e.g. `izumi-vpl-jwt-secret-stg`).
+Secrets (≤6 per project, issue #131): `izumi-vpl-database-url-{env}` + bundled `izumi-vpl-app-secrets-{env}` (`.env` with JWT / Google SA / Drive folder). Create bundle: `bash google-cloud/scripts/migrate-app-secrets-to-bundle.sh dev`.
 
 ## Architecture
 
 - **Cloud Run**: API (Express/Prisma), Web (Next.js), Migrate Job (Prisma)
 - **Cloud SQL**: MySQL (`vehicle_pl_system`)
-- **Secret Manager**: `JWT_SECRET`, `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_DRIVE_FOLDER_ID`, `DATABASE_URL` (auto)
+- **Secret Manager**: 3× `DATABASE_URL` + 3× bundled app `.env` (`APP_SECRETS_FILE=/secrets/app.env` on Cloud Run)
 - **VPC**: Private Cloud SQL connectivity
 
 ## Quick start
