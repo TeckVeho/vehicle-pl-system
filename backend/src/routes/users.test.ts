@@ -106,4 +106,105 @@ describe("users routes", () => {
       expect(res.body.id).toBe("u1");
     });
   });
+
+  describe("POST /api/users/sync", () => {
+    const syncUser = {
+      userId: "ic-100",
+      email: "tenko@example.com",
+      name: "点呼 太郎",
+      role: "点呼員",
+    };
+
+    beforeEach(() => {
+      prismaMock.user.findUnique.mockResolvedValue(
+        mockUser("DX管理者", "u-admin", "Admin")
+      );
+      prismaMock.user.findFirst.mockResolvedValue(null);
+      prismaMock.user.create.mockResolvedValue({
+        id: "u-new",
+        email: syncUser.email,
+        name: syncUser.name,
+        role: syncUser.role,
+        externalId: syncUser.userId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    });
+
+    it("creates user with 点呼員 role", async () => {
+      const token = dxAdminToken();
+      const res = await request(app)
+        .post("/api/users/sync")
+        .set("Cookie", `auth-token=${token}`)
+        .send({ users: [syncUser] });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        synced: 1,
+        results: [
+          { email: syncUser.email, status: "created", id: "u-new" },
+        ],
+      });
+      expect(prismaMock.user.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          email: syncUser.email,
+          name: syncUser.name,
+          role: "点呼員",
+          externalId: syncUser.userId,
+        }),
+      });
+    });
+
+    it("creates user with 事務員 role (regression)", async () => {
+      const clerkUser = {
+        userId: "ic-101",
+        email: "clerk@example.com",
+        name: "事務 花子",
+        role: "事務員",
+      };
+      prismaMock.user.create.mockResolvedValue({
+        id: "u-clerk",
+        email: clerkUser.email,
+        name: clerkUser.name,
+        role: clerkUser.role,
+        externalId: clerkUser.userId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const token = dxAdminToken();
+      const res = await request(app)
+        .post("/api/users/sync")
+        .set("Cookie", `auth-token=${token}`)
+        .send({ users: [clerkUser] });
+
+      expect(res.status).toBe(200);
+      expect(res.body.synced).toBe(1);
+      expect(prismaMock.user.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ role: "事務員" }),
+      });
+    });
+
+    it("skips user with invalid role", async () => {
+      const token = dxAdminToken();
+      const res = await request(app)
+        .post("/api/users/sync")
+        .set("Cookie", `auth-token=${token}`)
+        .send({
+          users: [
+            {
+              userId: "ic-bad",
+              email: "bad@example.com",
+              name: "Bad User",
+              role: "invalid_role",
+            },
+          ],
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ synced: 0, results: [] });
+      expect(prismaMock.user.create).not.toHaveBeenCalled();
+      expect(prismaMock.user.update).not.toHaveBeenCalled();
+    });
+  });
 });

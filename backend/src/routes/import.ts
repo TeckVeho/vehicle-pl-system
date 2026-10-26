@@ -32,7 +32,8 @@ function parseCSV(text: string): DataRow[] {
 }
 
 async function parseExcel(buffer: Buffer): Promise<DataRow[]> {
-  const raw = await readXlsxFile(buffer);
+  const workbookSheets = await readXlsxFile(buffer);
+  const raw = workbookSheets[0]?.data ?? [];
   if (raw.length < 2) return [];
   const rows: DataRow[] = [];
   for (const row of raw.slice(1)) {

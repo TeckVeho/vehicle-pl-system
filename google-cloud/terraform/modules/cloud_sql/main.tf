@@ -204,7 +204,11 @@ resource "google_secret_manager_secret" "database_url" {
   secret_id = local.database_url_secret_id
 
   replication {
-    auto {}
+    user_managed {
+      replicas {
+        location = var.region
+      }
+    }
   }
 
   depends_on = [google_project_service.secretmanager]
@@ -231,6 +235,9 @@ resource "google_secret_manager_secret_iam_member" "cloudrun_database_url" {
   secret_id = google_secret_manager_secret.database_url[0].secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${var.cloud_run_service_account}"
+
+  # Secret replacement (e.g. replication policy) clears IAM on the resource; re-apply after version exists.
+  depends_on = [google_secret_manager_secret_version.database_url]
 }
 
 resource "google_project_iam_member" "cloudrun_sql_client" {

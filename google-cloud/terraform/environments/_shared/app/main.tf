@@ -32,6 +32,7 @@ module "app_compose" {
   cloud_run_web_timeout              = var.cloud_run_web_timeout
   cloud_run_web_concurrency          = var.cloud_run_web_concurrency
   api_secret_env_from_sm             = var.api_secret_env_from_sm
+  app_secrets_bundle_secret_id       = var.app_secrets_bundle_secret_id
   web_secret_env_from_sm             = var.web_secret_env_from_sm
   project_iam_members                = var.project_iam_members
   resource_tier                      = var.resource_tier

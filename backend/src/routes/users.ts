@@ -23,6 +23,7 @@ function normalizeBcryptHash(hash: string): string {
 export const VALID_ROLES = [
   "CREW",
   "事務員",
+  "点呼員",
   "TL",
   "事業部",
   "人事労務",

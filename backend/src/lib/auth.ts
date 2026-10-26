@@ -100,7 +100,7 @@ export function requireRole(allowedRoles: readonly string[]) {
 export const ROLES = {
   /** 閲覧のみ（全ログインユーザー） */
   VIEW: [
-    "CREW", "事務員", "TL", "事業部", "人事労務", "総務広報", "経理財務",
+    "CREW", "事務員", "点呼員", "TL", "事業部", "人事労務", "総務広報", "経理財務",
     "品質管理", "営業", "現場MG", "本社MG", "部長", "執行役員", "取締役", "DX", "DX管理者",
   ],
   /** 損益データの編集・インポート */
