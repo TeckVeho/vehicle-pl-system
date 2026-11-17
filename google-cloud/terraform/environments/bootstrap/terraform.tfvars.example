@@ -6,8 +6,10 @@ region     = "asia-northeast1"
 
 state_bucket_name = "izumi-vpl-terraform-state"
 
+grant_default_compute_reader = false
+
 additional_artifact_registry_writer_members = [
-  "serviceAccount:REPLACE_WITH_PROJECT_NUMBER@cloudbuild.gserviceaccount.com",
+  "serviceAccount:izumi-vpl-cd-build@izumi-vpl.iam.gserviceaccount.com",
 ]
 
 artifact_cleanup_keep_count                 = 10

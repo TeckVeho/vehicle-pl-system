@@ -28,6 +28,7 @@ module "artifact_registry" {
   project_id                                  = var.project_id
   region                                      = var.region
   artifact_repo_id                            = var.artifact_repo_id != "" ? var.artifact_repo_id : module.naming.artifact_repo_id
+  grant_default_compute_reader                = var.grant_default_compute_reader
   additional_artifact_registry_reader_members = var.additional_artifact_registry_reader_members
   additional_artifact_registry_writer_members = var.additional_artifact_registry_writer_members
   artifact_cleanup_keep_count                 = var.artifact_cleanup_keep_count

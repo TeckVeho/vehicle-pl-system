@@ -42,6 +42,8 @@ substitutions:
   _NEXT_PUBLIC_API_URL: 'https://izumi-vpl-api-dev-placeholder.run.app'
   _NEXT_PUBLIC_BASE_URL: 'https://izumi-vpl-web-dev-placeholder.run.app'
 
+serviceAccount: projects/izumi-vpl/serviceAccounts/izumi-vpl-cd-build@izumi-vpl.iam.gserviceaccount.com
+
 options:
   logging: CLOUD_LOGGING_ONLY
   machineType: E2_HIGHCPU_8
