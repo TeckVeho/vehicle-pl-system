@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { requireRole, ROLES } from "../lib/auth.js";
+import { routeParam } from "../lib/route-param.js";
 
 export const coursesRouter = Router();
 
@@ -178,7 +179,7 @@ coursesRouter.post("/", requireRole(ROLES.MASTER), async (req: Request, res: Res
 
 coursesRouter.put("/:id", requireRole(ROLES.MASTER), async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = routeParam(req.params.id);
     const { name, code, sortOrder } = req.body;
 
     const course = await prisma.course.update({
@@ -201,7 +202,7 @@ coursesRouter.put("/:id", requireRole(ROLES.MASTER), async (req: Request, res: R
 
 coursesRouter.delete("/:id", requireRole(ROLES.MASTER), async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = routeParam(req.params.id);
 
     const count = await prisma.vehicle.count({
       where: { courseId: id },

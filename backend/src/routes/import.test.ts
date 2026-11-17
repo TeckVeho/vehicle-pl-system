@@ -17,7 +17,9 @@ describe("import routes", () => {
     const token = masterToken();
     const res = await request(app)
       .post("/api/import")
-      .set("Cookie", `auth-token=${token}`);
+      .set("Cookie", `auth-token=${token}`)
+      .field("locationId", "loc-1")
+      .field("yearMonth", "2026-07");
 
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("file, locationId, yearMonth are required");

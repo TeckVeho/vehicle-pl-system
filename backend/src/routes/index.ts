@@ -29,7 +29,7 @@ export const apiRouter = Router();
 apiRouter.use((req, res, next) => {
   if (req.path === "/auth/login" && req.method === "POST") return next();
   if (req.path === "/auth/logout" && req.method === "POST") return next();
-  return requireAuth(req, res, next);
+  void requireAuth(req, res, next).catch(next);
 });
 
 apiRouter.use("/auth", authRouter);

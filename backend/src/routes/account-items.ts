@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { accountItemEffectiveWhere } from "../lib/account-item-filter.js";
 import { requireRole, ROLES } from "../lib/auth.js";
+import { routeParam } from "../lib/route-param.js";
 
 export const accountItemsRouter = Router();
 
@@ -77,7 +78,7 @@ accountItemsRouter.post("/", requireRole(ROLES.MASTER), async (req: Request, res
 
 accountItemsRouter.put("/:id", requireRole(ROLES.MASTER), async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = routeParam(req.params.id);
     const {
       code,
       name,
@@ -137,7 +138,7 @@ accountItemsRouter.put("/:id", requireRole(ROLES.MASTER), async (req: Request, r
 
 accountItemsRouter.delete("/:id", requireRole(ROLES.MASTER), async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = routeParam(req.params.id);
 
     const [monthlyCount, driverAmountCount] = await Promise.all([
       prisma.monthlyRecord.count({ where: { accountItemId: id } }),
