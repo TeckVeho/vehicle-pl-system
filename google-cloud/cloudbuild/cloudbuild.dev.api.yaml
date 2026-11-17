@@ -69,6 +69,8 @@ substitutions:
   _API_SERVICE: izumi-vpl-api-dev
   _MIGRATE_JOB: izumi-vpl-migrate-dev
 
+serviceAccount: projects/izumi-vpl/serviceAccounts/izumi-vpl-cd-build@izumi-vpl.iam.gserviceaccount.com
+
 options:
   logging: CLOUD_LOGGING_ONLY
   machineType: E2_MEDIUM

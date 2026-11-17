@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# LEGACY — prefer google-cloud/scripts/setup-github-actions-wif.sh (issue #153).
+# This script grants broad project roles (incl. compute default SA for Cloud Build execution).
 # Grant IAM for GitHub Actions + Cloud Build (single GCP project).
 # Implements Step 5–6 of google-cloud/cloudbuild/GITHUB_ACTIONS_WIF.md
 #

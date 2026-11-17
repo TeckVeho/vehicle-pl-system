@@ -21,6 +21,12 @@ variable "artifact_repo_id" {
   description = "Docker Artifact Registry repository id. Empty → {project}-docker."
 }
 
+variable "grant_default_compute_reader" {
+  type        = bool
+  default     = false
+  description = "Grant artifactregistry.reader to the Compute default SA (legacy). Set false after issue #154 cutover."
+}
+
 variable "additional_artifact_registry_reader_members" {
   type        = list(string)
   default     = []

@@ -2,6 +2,31 @@
 
 This guide explains how to create **`GCP_WORKLOAD_IDENTITY_PROVIDER`** and related resources so [`.github/workflows/cd-gcp.yml`](../../.github/workflows/cd-gcp.yml) can authenticate to Google Cloud **without** a long-lived JSON key.
 
+## Automated setup (recommended — issue #153)
+
+From repo root, as a GCP project owner (after bootstrap Terraform / Artifact Registry exist):
+
+```bash
+bash google-cloud/scripts/setup-github-actions-wif.sh --dry-run
+bash google-cloud/scripts/setup-github-actions-wif.sh
+```
+
+That script configures:
+
+- WIF pool + OIDC provider (repo + branch refs: `develop`, `staging`, `production`)
+- Federated SA `github-actions-izumi-vpl@` (submit Cloud Build only — no `run.admin` / `storage.admin`)
+- Cloud Build execution SA `izumi-vpl-cd-build@` (`run.developer`, scoped `serviceAccountUser` on `izumi-vpl-run-{dev,stg,prod}@`)
+
+Cloud Build configs set `serviceAccount: projects/izumi-vpl/serviceAccounts/izumi-vpl-cd-build@izumi-vpl.iam.gserviceaccount.com`. Re-run CD and verify with:
+
+```bash
+gcloud builds list --project=izumi-vpl --limit=3 --format='table(id,status,serviceAccount)'
+```
+
+Then complete default-SA cleanup per [issue #154](https://github.com/TeckVeho/vehicle-pl-system/issues/154) and `docs/gcp-issue-154-iam-cleanup.md`.
+
+**Legacy:** manual steps below and [`grant-github-actions-iam.sh`](../scripts/grant-github-actions-iam.sh) granted wide roles on the Compute default SA — do not use for new setup.
+
 **Architecture:** [vehicle-pl-system](https://github.com/TeckVeho/vehicle-pl-system) uses **one GCP project** (`izumi-vpl` by default) for bootstrap, Artifact Registry, Cloud Build, and Cloud Run across dev / staging / production. Environments are separated by image tag and resource naming (`izumi-vpl-api-dev`, etc.), not by separate GCP projects.
 
 ## What you are creating
