@@ -31,7 +31,7 @@
     "google-auth-library": "^11.3.4",
     "jsonwebtoken": "^9.0.3",
     "mariadb": "^3.5.4",
-    "multer": "^2.2.0",
+    "multer": "^2.5.0",
     "node-cron": "^4.2.1",
     "read-excel-file": "^9.3.10",
     "zod": "^4.6.5"
