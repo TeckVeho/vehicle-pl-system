@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { ROLES, requireRole } from "../lib/auth.js";
 import { filterVisibleLocations } from "../lib/visible-locations.js";
+import { routeParam } from "../lib/route-param.js";
 
 export const locationsRouter = Router();
 
@@ -24,7 +25,7 @@ locationsRouter.patch(
   "/:id",
   requireRole(ROLES.MASTER),
   async (req: Request, res: Response): Promise<void> => {
-    const { id } = req.params;
+    const id = routeParam(req.params.id);
     const { spreadsheetId } = req.body as { spreadsheetId?: string | null };
 
     const existing = await prisma.location.findUnique({ where: { id } });

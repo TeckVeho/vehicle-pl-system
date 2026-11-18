@@ -1,4 +1,4 @@
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import multer from "multer";
 import readXlsxFile from "read-excel-file/node";
 import { prisma } from "../lib/prisma.js";
@@ -10,6 +10,23 @@ const MANUAL_INPUT_ONLY_NAMES = ["その他", "不動産収入", "人材派遣�
 type DataRow = { vehicleNo: string; accountKey: string; amount: number };
 
 const upload = multer({ storage: multer.memoryStorage() });
+
+const missingImportFieldsError = "file, locationId, yearMonth are required";
+
+/** Multer errors (e.g. non-multipart body) surface as 500 on Express 5 without a callback. */
+function importUpload(req: Request, res: Response, next: NextFunction) {
+  try {
+    upload.single("file")(req, res, (err: unknown) => {
+      if (err) {
+        res.status(400).json({ error: missingImportFieldsError });
+        return;
+      }
+      next();
+    });
+  } catch {
+    res.status(400).json({ error: missingImportFieldsError });
+  }
+}
 
 function parseCSV(text: string): DataRow[] {
   const lines = text
@@ -55,7 +72,7 @@ export const importRouter = Router();
 
 importRouter.post(
   "/",
-  upload.single("file"),
+  importUpload,
   async (req: Request, res: Response) => {
     const file = req.file;
     const locationId = req.body.locationId as string | undefined;
@@ -63,7 +80,7 @@ importRouter.post(
 
     if (!file || !locationId || !yearMonth) {
       res.status(400).json({
-        error: "file, locationId, yearMonth are required",
+        error: missingImportFieldsError,
       });
       return;
     }
